@@ -12,6 +12,13 @@ library(ggplot2)
 source('/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
 ```
 
+TO DO:
+
+
+For outlier detection:
+- MAD approach: https://wis.kuleuven.be/statdatascience/robust/papers/2011/rousseeuwhubert-robuststatisticsforoutlierdetectio.pdf
+- recommended z-score = 3 for large n (>80): https://arxiv.org/ftp/arxiv/papers/1406/1406.5074.pdf
+
 
 TESTING: LM of ABGQI using by-hour data
 At the by-hour level non-significant Wilcoxon tests:
@@ -46,14 +53,12 @@ pair_preds$DDHH = substr(pair_preds$DDHHmm,1,4)
 by_hr_abgqi = pair_preds %>%
   select(-wav, -DDHHmm, -melspec) %>%
   group_by(SiteID, site_AM, site_LG, soundType, DDHH) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(by_hr_abgqi) = sub("_1*", "", colnames(by_hr_abgqi))
+  summarise(across(everything(), mean))
 
 by_site_abgqi = pair_preds %>%
   select(-wav, -DDHHmm, -melspec, -DDHH) %>%
   group_by(SiteID, site_AM, site_LG, soundType) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(by_site_abgqi) = sub("_1*", "", colnames(by_site_abgqi))
+  summarise(across(everything(), mean))
 
 
 # Acoustic indices
@@ -61,14 +66,12 @@ pair_indices$DDHH = substr(pair_indices$DDHHmm,1,4)
 by_hr_indices = pair_indices %>%
   select(-wav, -DDHHmm) %>%
   group_by(SiteID, site_AM, site_LG, acIndex, DDHH) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(by_hr_indices) = sub("_1*", "", colnames(by_hr_indices))
+  summarise(across(everything(), mean))
 
 by_site_indices = pair_indices %>%
   select(-wav, -DDHHmm, -DDHH) %>%
   group_by(SiteID, site_AM, site_LG, acIndex) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(by_site_indices) = sub("_1*", "", colnames(by_site_indices))
+  summarise(across(everything(), mean))
 
 unique(by_site_indices$acIndex)
 ```
@@ -87,28 +90,39 @@ model_list = list()
 temp = by_hr_abgqi %>%
   filter(soundType == 'Anthrophony') %>%
   mutate(logAM = log(AM), logLG = log(LG))
-  
+
+
 # check distribution
 corr_plotter(temp)
 
-mod = lm(logAM ~ logLG, data = temp)
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG # use AM-LG difference as extreme values at the ARU may be okay but extreme differences will negatively impact the LM()
+hist(diff_am_lg)
+plot(temp$AM, temp$LG)
+# scale values
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
+
+# Model transformed, outlier-removed data
+mod = lm(log(AM) ~ log(LG), data = temp)
 summary(mod)
 plot(mod)
 
-# Check for normal standardized residuals 
-shapiro.test(rstandard(mod))
 
 # prediction check
 emmeans::emmeans(mod, ~1, type = 'response')
 ci = data.frame(predict(data = temp, mod, interval='confidence'))
 temp = cbind(temp, ci)
-ggplot(temp, aes(x=logLG)) +
-  geom_ribbon(aes(ymin=lwr, ymax=upr), fill='red', alpha=.3) +
-  geom_line(aes(y=fit), color='red') +
-  geom_point(aes(y=logAM)) 
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
 
 model_list['Anthro'] = list(mod)
 ```
+
 
 ```{r}
 # Biophony
@@ -121,12 +135,28 @@ temp = temp %>%
   mutate(logAM = log(AM), logLG = log(LG)) %>% # log correction
   mutate(sqrtAM = sqrt(AM), sqrtLG = sqrt(LG)) # square root appears most normal and highest correlation
 
+# Outlier analysis
+diff_am_lg = temp$sqrtAM - temp$sqrtLG 
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # check distribution
 corr_plotter(temp)
 
-mod = lm(sqrtAM ~ sqrtLG, data = temp)
+mod = lm(sqrt(AM) ~ sqrt(LG), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr)^2, ymax = (upr)^2), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)^2), color = 'red') +
+  geom_point(aes(y = AM))
+
 model_list['Biophony'] = list(mod)
 ```
 
@@ -134,14 +164,31 @@ model_list['Biophony'] = list(mod)
 # Quiet
 temp = by_hr_abgqi %>%
   filter(soundType == 'Quiet')
-corr_plotter(temp)
-
 temp = temp %>%
   mutate(LG2 = LG^2)
 
-mod = lm(AM ~ LG2, data = temp)
+corr_plotter(temp)
+
+# Outlier analysis
+diff_am_lg = temp$AM - temp$LG2
+# scale values
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
+# Model
+mod = lm(AM ~ LG^2, data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr), ymax = (upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)), color = 'red') +
+  geom_point(aes(y = AM))  
 
 model_list['Quiet'] = list(mod)
 ```
@@ -158,10 +205,25 @@ temp = temp %>%
   mutate(sqrtAM = sqrt(AM), sqrtLG = sqrt(LG))
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+# scale values
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
 
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(log(AM) ~ log(LG), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM))  
 
 model_list['Interference'] = list(mod)
 ```
@@ -172,26 +234,31 @@ temp = by_hr_indices %>%
   filter(acIndex == 'ACI')
 corr_plotter(temp)
 
-# Normalize values
-summary(temp$LG) # min = 60/max = 92
-summary(temp$AM) # min = 56/max = 108
-# temp_max = max(temp$AM)
-# temp_min = min(temp$AM)
-# temp$AM_norm = min_max_norm(temp$AM, min_x = temp_min, max_x = temp_max)
-# temp$LG_norm = min_max_norm(temp$LG, min_x = temp_min, max_x = temp_max)
-temp$AM_norm = min_max_norm(temp$AM, min_x = min(temp$AM), max_x = max(temp$AM))
-temp$LG_norm = min_max_norm(temp$LG, min_x = min(temp$LG), max_x = max(temp$LG))
-
 # log correction
 temp = temp %>%
-  filter(AM_norm > 0 & LG_norm > 0.0022) %>% # rows with AM == 0 values and LG_norm <= 0.00218801 also had extremely large effect (n = 3 dropped)
-  mutate(logAM = log(AM_norm), logLG = log(LG_norm)) # log correction
+  mutate(logAM = log(AM), logLG = log(LG)) # log correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+# scale values
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(log(AM) ~ log(LG), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
 
 model_list['ACI'] = list(mod)
 ```
@@ -199,26 +266,33 @@ model_list['ACI'] = list(mod)
 ```{r}
 # ADI
 temp = by_hr_indices %>%
-  filter(acIndex == 'ADI' )%>%
-  filter(AM > 0 & LG > 0)
+  filter(acIndex == 'ADI' )
 corr_plotter(temp)
-
-# Normalize values: because already bound by 0 we only need divide by max to normalize
-summary(temp$LG) # min = 0/max = 2.30275
-summary(temp$AM) # min = 0/max = 2.30285
-temp$AM_norm = temp$AM / max(temp$AM)
-temp$LG_norm = temp$LG / max(temp$LG)
 
 # correction
 temp = temp %>%
-  mutate(logAM = log(AM_norm / (1 - AM_norm)), logLG = log(LG_norm / (1 - LG_norm))) %>% # logit corrrection
-  filter(!(is.infinite(logAM) | is.infinite(logLG)))
+  mutate(AM2 = AM^2, AM3 = AM^3, LG2 = LG^2, LG3 = LG^3)
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$AM3 - temp$LG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(AM^3 ~ LG, data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr)^(1/3), ymax = (upr)^(1/3)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)^(1/3)), color = 'red') +
+  geom_point(aes(y = AM)) 
 
 model_list['ADI'] = list(mod)
 ```
@@ -235,10 +309,25 @@ temp = temp %>%
   mutate(sqrtAM = sqrt(AM), sqrtLG = sqrt(LG)) # sqrt correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$sqrtAM - temp$LG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(sqrtAM ~ LG, data = temp)
+mod = lm(sqrt(AM) ~ LG, data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr)^2, ymax = (upr)^2), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)^2), color = 'red') +
+  geom_point(aes(y = AM)) 
 
 model_list['AEI'] = list(mod)
 ```
@@ -255,10 +344,25 @@ temp = temp %>%
   mutate(sqrtAM = sqrt(AM), sqrtLG = sqrt(LG)) # sqrt correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(log(AM) ~ log(LG), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM))
 
 model_list['BI'] = list(mod)
 ```
@@ -273,16 +377,30 @@ summary(temp)
 
 # correction
 temp = temp %>%
-  mutate(logitAM = log(AM / (1 - AM)), logitLG = log(LG / (1 - LG)))  # logit correction
+  mutate(logitAM = toLogit(AM), logitLG = toLogit(LG))  # logit correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logitAM - temp$logitLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(logitAM ~ logitLG, data = temp)
+mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
 summary(mod)
 plot(mod)
 
-model_list['H'] = list(mod)
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = fromLogit(lwr), ymax = fromLogit(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = fromLogit(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
 
+model_list['H'] = list(mod)
 ```
 
 ```{r}
@@ -294,69 +412,100 @@ summary(temp)
 
 # correction
 temp = temp %>%
-  mutate(logitAM = log(AM / (1 - AM)), logitLG = log(LG / (1 - LG)))  # logit correction
+  mutate(logitAM = toLogit(AM), logitLG = toLogit(LG))  # logit correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logitAM - temp$logitLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
 # fit model
-mod = lm(logitAM ~ logitLG, data = temp)
+mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = fromLogit(lwr), ymax = fromLogit(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = fromLogit(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
 
 model_list['Hs'] = list(mod)
 ```
 
 ```{r}
 # Ht
-# temp = by_hr_indices %>%
-#   filter(acIndex == 'Ht' )
-# corr_plotter(temp)
-# summary(temp)
-# 
-# # normalize
-# temp$AM_norm = min_max_norm(temp$AM, min_x = min(temp$AM), max_x = max(temp$AM))
-# temp$LG_norm = min_max_norm(temp$LG, min_x = min(temp$LG), max_x = max(temp$LG))
-# 
-# # correction
-# temp = temp %>%
-#   mutate(logitAM = log(AM_norm / (1 - AM_norm)), logitLG = log(LG_norm / (1 - LG_norm)))  # logit correction
-# temp = temp %>%
-#   filter(!is.infinite(logitAM)) %>%
-#   filter(!is.infinite(logitLG))
-# corr_plotter(temp)
-# 
-# # fit model
-# mod = lm(logitAM ~ logitLG, data = temp)
-# summary(mod)
-# plot(mod)
-# 
-# model_list['Ht'] = list(mod)
+temp = by_hr_indices %>%
+  filter(acIndex == 'Ht' )
+corr_plotter(temp)
+summary(temp)
+
+# correction
+temp = temp %>%
+  mutate(logitAM = toLogit(AM), logitLG = toLogit(LG))
+corr_plotter(temp)
+
+# Outlier analysis
+diff_am_lg = temp$logitAM - temp$logitLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
+# fit model
+mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
+summary(mod)
+plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = fromLogit(lwr), ymax = fromLogit(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = fromLogit(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
+
+model_list['Ht'] = list(mod)
 ```
 
 ```{r}
 # M
-# temp = by_hr_indices %>%
-#   filter(acIndex == 'M' )
-# corr_plotter(temp)
-# summary(temp)
-# 
-# temp$AM_norm = min_max_norm(temp$AM, min_x = min(temp$AM), max_x = max(temp$AM))
-# temp$LG_norm = min_max_norm(temp$LG, min_x = min(temp$LG), max_x = max(temp$LG))
-# 
-# # correction
-# temp = temp %>%
-#   mutate(logAM = log(AM_norm+0.0000001), logLG = log(LG_norm+0.0000001))  # logit correction
-# corr_plotter(temp)
-# 
-# 
-# temp = temp[-948,]
-# temp = temp[-c(906,929,975),]
-# 
-# # fit model
-# mod = lm(logAM ~ logLG, data = temp)
-# summary(mod)
-# plot(mod)
-# 
-# model_list['Hs'] = list(mod)
+temp = by_hr_indices %>%
+  filter(acIndex == 'M' )
+corr_plotter(temp)
+summary(temp)
+
+# correction
+temp = temp %>%
+  mutate(logAM = log(AM+0.0000001), logLG = log(LG+0.0000001))  # log correction
+corr_plotter(temp)
+
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+temp = temp[-outliers,]
+
+# fit model
+mod = lm(log(AM+0.0000001) ~ log(LG+0.0000001), data = temp)
+summary(mod)
+plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM)) 
+
+model_list['Hs'] = list(mod)
 ```
 
 ```{r}
@@ -379,10 +528,27 @@ temp = temp %>%
   mutate(logAM = log(AM), logLG = log(LG))  # logit correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+if(length(outliers) != 0 ){
+  temp = temp[-outliers,]
+}
+
 # fit model
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(log(AM+0.0000001) ~ log(LG+0.0000001), data = temp)
 summary(mod)
 plot(mod)
+
+# predictioncheck
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM))
 
 model_list['R'] = list(mod)
 ```
@@ -399,328 +565,99 @@ temp = temp %>%
   mutate(sqrtAM = sqrt(AM), sqrtLG = sqrt(LG)) # sqrt correction
 corr_plotter(temp)
 
+# Outlier analysis
+diff_am_lg = temp$logAM - temp$logLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+if(length(outliers) != 0 ){
+  temp = temp[-outliers,]
+}
+
 # fit model
-mod = lm(logAM ~ logLG, data = temp)
+mod = lm(log(AM+0.0000001) ~ log(LG+0.0000001), data = temp)
 summary(mod)
 plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = exp(lwr), ymax = exp(upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = exp(fit)), color = 'red') +
+  geom_point(aes(y = AM))
 
 model_list['rugo'] = list(mod)
 ```
 
 ```{r}
 # sfm
-# temp = by_hr_indices %>%
-#   filter(acIndex == 'sfm' )
-# corr_plotter(temp)
-# 
-# # fit model
-# mod = lm(AM ~ LG, data = temp)
-# summary(mod)
-# plot(mod)
-# 
-# model_list['sfm'] = list(mod)
-```
-
-```{r}
-# zcr_mean
-# rugo
 temp = by_hr_indices %>%
-  filter(acIndex == 'zcr_mean' )
+  filter(acIndex == 'sfm' )
 corr_plotter(temp)
+
+# Outlier analysis
+diff_am_lg = temp$AM - temp$LG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+if(length(outliers) != 0 ){
+  temp = temp[-outliers,]
+}
 
 # fit model
 mod = lm(AM ~ LG, data = temp)
 summary(mod)
 plot(mod)
 
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr), ymax = (upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)), color = 'red') +
+  geom_point(aes(y = AM))
+
+model_list['sfm'] = list(mod)
+```
+
+```{r}
+# zcr_mean
+temp = by_hr_indices %>%
+  filter(acIndex == 'zcr_mean' )
+corr_plotter(temp)
+
+temp = temp %>%
+  mutate(sqrtLG = sqrt(LG))
+
+# Outlier analysis
+diff_am_lg = temp$AM - temp$sqrtLG
+MAD_values = MAD_z(diff_am_lg)
+outliers = which(abs(MAD_values) >= 3)
+if(length(outliers) != 0 ){
+  temp = temp[-outliers,]
+}
+
+# fit model
+mod = lm(AM ~ sqrt(LG), data = temp)
+summary(mod)
+plot(mod)
+
+# prediction check
+emmeans::emmeans(mod, ~1, type = 'response')
+ci = data.frame(predict(data = temp, mod, interval='confidence'))
+temp = cbind(temp, ci)
+ggplot(temp, aes(x=LG)) +
+  geom_ribbon(aes(ymin = (lwr), ymax = (upr)), fill = 'red', alpha = .3) +
+  geom_line(aes(y = (fit)), color = 'red') +
+  geom_point(aes(y = AM))
+
 model_list['zcr_mean'] = list(mod)
 ```
 
 
 ```{r}
-# Normalize values
-# mu = mean(c(temp$LG, temp$AM)) # mean of all values
-# sd = sd(c(temp$LG, temp$AM)) # sd of all values
-# temp$LG_norm = center_scale(temp$LG, mu = mu, sd = sd)
-# temp$AM_norm = center_scale(temp$AM, mu = mu, sd = sd)
+saveRDS(model_list, file = paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models.rds'))
 ```
-
-
-2. Check whether corrected LG data results in non-significant Wilcoxon tests
-ANTHROPHONY
-```{r}
-# check our model for transformations
-model_list$Anthro
-
-# create new transformed data to predict on
-corrected_df = by_hr_abgqi %>%
-  ungroup() %>%
-  filter(soundType == 'Anthrophony') %>%
-  mutate(logLG = log(LG + 0.000001)) %>%
-  select(SiteID, logLG, AM, LG)
-
-# prediction
-corrected_df$y_pred = predict(model_list$Anthro, newdata = corrected_df)
-
-# transform response (logAM) back to standard scale (0-1)
-corrected_df = corrected_df %>%
-  mutate(LG_corr = exp(y_pred)) %>%
-  mutate(LG_corr = ifelse(LG_corr > 1, 1, LG_corr))
-
-# HOURLY
-# V = 800499, p-value = 6.106e-13
-(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
-
-
-# SITE
-# V = 171, p-value = 0.156
-corrected_df_site = corrected_df%>%
-  group_by(SiteID) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(corrected_df_site) = sub("*_1$", "", colnames(corrected_df_site))
-(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
-
-corrected_df_site %>%
-  select(AM, LG_corr) %>%
-  rename(LG = LG_corr) %>%
-  index_boxplot()
-```
-
-BIOPHONY
-```{r}
-# check our model for transformations
-model_list$Biophony
-
-# create new transformed data to predict on
-corrected_df = by_hr_abgqi %>%
-  ungroup() %>%
-  filter(soundType == 'Biophony') %>%
-  mutate(sqrtLG = sqrt(LG)) %>%
-  select(SiteID, sqrtLG, AM, LG)
-
-# prediction
-corrected_df$y_pred = predict(model_list$Biophony, newdata = corrected_df)
-
-# transform back to response scale (0-1)
-corrected_df = corrected_df %>%
-  mutate(LG_corr = y_pred^2)
-
-# V = 797781, p-value = 1.727e-12
-(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
-
-# SITE
-# V = 183, p-value = 0.06844
-corrected_df_site = corrected_df%>%
-  group_by(SiteID) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(corrected_df_site) = sub("*_1$", "", colnames(corrected_df_site))
-(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
-
-corrected_df_site %>%
-  select(AM, LG_corr) %>%
-  rename(LG = LG_corr) %>%
-  index_boxplot()
-```
-
-QUIET
-```{r}
-# check our model for transformations
-model_list$Quiet
-summary(model_list$Quiet)
-
-# create new transformed data to predict on
-corrected_df = by_hr_abgqi %>%
-  ungroup() %>%
-  filter(soundType == 'Quiet') %>%
-  mutate(LG2 = LG^2) %>%
-  select(SiteID, LG2, AM, LG)
-
-# prediction
-corrected_df$y_pred = predict(model_list$Quiet, newdata = corrected_df)
-
-# Quiet AM was not transformed, prediction is on standard scale
-corrected_df = corrected_df %>%
-  mutate(LG_corr = y_pred)
-
-# V = 664112, p-value = 0.9876
-(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
-
-corrected_df %>%
-  select(AM, LG_corr) %>%
-  rename(LG = LG_corr) %>%
-  index_boxplot()
-
-# SITE
-# V = 132, p-value = 0.8736
-corrected_df_site = corrected_df%>%
-  group_by(SiteID) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(corrected_df_site) = sub("*_1$", "", colnames(corrected_df_site))
-(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
-
-corrected_df_site %>%
-  select(AM, LG, LG_corr) %>%
-  gather(variable, value) %>%
-  ggplot(aes(x = variable, y = value)) +
-      geom_jitter(width = 0.1, alpha = 0.3) + 
-      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
-      labs(title = "Paired ARU corrections by-site for Quiet") +
-      ylab('Percent present') +
-      xlab('ARU model')
-  
-```
-
-INTERFERENCE
-```{r}
-# check our model for transformations
-model_list$Interference
-
-# create new transformed data to predict on
-corrected_df = by_hr_abgqi %>%
-  ungroup() %>%
-  filter(soundType == 'Interference') %>%
-  mutate(logLG = log(LG)) %>%
-  select(SiteID, logLG, AM, LG)
-
-# prediction
-corrected_df$y_pred = predict(model_list$Interference, newdata = corrected_df)
-
-# transform response (logAM) back to standard scale (0-1)
-corrected_df = corrected_df %>%
-  mutate(LG_corr = exp(y_pred)) %>%
-  mutate(LG_corr = ifelse(LG_corr > 1, 1, LG_corr))
-
-# V = 779521, p-value = 1.106e-09
-(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
-
-# SITE
-# V = 184, p-value = 0.06342
-corrected_df_site = corrected_df%>%
-  group_by(SiteID) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(corrected_df_site) = sub("*_1$", "", colnames(corrected_df_site))
-(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
-
-corrected_df_site %>%
-  select(AM, LG, LG_corr) %>%
-  gather(variable, value) %>%
-  ggplot(aes(x = variable, y = value)) +
-  geom_jitter(width = 0.1, alpha = 0.1) + 
-      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
-  
-```
-
-
-
-
-
-3. Apply any corrections to the by-hour acoustic data
-ABGQI
-```{r}
-# read in ABGQI by_hour
-by_hr_df = read.csv(paste0(wd,'results/ABGQI_inference/averages/site_by_hour_all_ABGQI.csv'))
-by_hr_df$ARU = substr(by_hr_df$site, 4,5)
-lg_by_hr = by_hr_df %>%
-  filter(ARU == 'lg') # select only lg sites to correct
-```
-
-```{r}
-# ANTHRO CORRECTION
-# check our model for transformations
-model_list$Anthro
-
-# create new transformed data to predict on
-x = lg_by_hr %>%
-  mutate(logLG = log(Anthropophony + 0.000001)) %>%
-  select(logLG)
-
-# prediction
-lg_by_hr$anthro_pred = predict(model_list$Anthro, newdata = x)
-
-# transform back to response scale (0-1)
-lg_by_hr = lg_by_hr %>%
-  mutate(anthro_corrected = exp(anthro_pred)) %>%
-  mutate(anthro_corrected = ifelse(anthro_corrected > 1, 1, anthro_corrected))
-```
-```{r}
-# BIOPHONY CORRECTION
-model_list$Biophony
-x = lg_by_hr %>%
-  mutate(sqrtLG = sqrt(Biophony)) %>%
-  select(sqrtLG)
-lg_by_hr$biophony_pred = predict(model_list$Biophony, newdata = x)
-
-# transform expo
-lg_by_hr = lg_by_hr %>%
-  mutate(biophony_corrected = biophony_pred^2)
-```
-```{r}
-# QUIET CORRECTION
-# check our model for transformations
-model_list$Quiet
-
-# create new transformed data to predict on
-x = lg_by_hr %>%
-  mutate(LG2 = Quiet^2) %>%
-  select(LG2)
-
-# prediction
-lg_by_hr$quiet_pred = predict(model_list$Quiet, newdata = x)
-
-# No transform needed
-lg_by_hr = lg_by_hr %>%
-  mutate(quiet_corrected = quiet_pred)
-
-```
-```{r}
-# INTERFERENCE CORRECTION
-# check our model for transformations
-model_list$Interference
-
-# create new transformed data to predict on
-x = lg_by_hr %>%
-  mutate(logLG = log(Interference + 0.000001)) %>%
-  select(logLG)
-
-# prediction
-lg_by_hr$interference_pred = predict(model_list$Interference, newdata = x)
-
-# transform back to response scale (0-1)
-lg_by_hr = lg_by_hr %>%
-  mutate(interference_corrected = exp(interference_pred)) %>%
-  mutate(interference_corrected = ifelse(interference_corrected > 1, 1, interference_corrected))
-```
-
-
-4. Combine AM and corrected LG hourly data, average to site values, and save tables
-```{r}
-# combine out corrected lg data back into am data 
-am_by_hr = by_hr_df %>%
-  filter(ARU == 'am') %>% # select only lg sites to correct
-  select(-Unidentified)
-lg_by_hr = lg_by_hr %>%
-  select(site, MM, DD, HH, anthro_corrected, biophony_corrected, Geophony, quiet_corrected, interference_corrected, n, ARU) %>%
-  rename(Anthropophony = anthro_corrected, 
-         Biophony = biophony_corrected, 
-         Quiet = quiet_corrected, 
-         Interference = interference_corrected)
-
-# Concatenate rows
-abgqi_corrected_combined_by_hr = rbind(am_by_hr, lg_by_hr)
-
-# create site avg 
-abgqi_corrected_combined_by_site = abgqi_corrected_combined_by_hr %>%
-  select(-MM, -DD, -HH, -ARU, -n) %>%
-  group_by(site) %>%
-  summarise(across(everything(), list(mean))) 
-colnames(abgqi_corrected_combined_by_site) = sub("*_1$", "", colnames(abgqi_corrected_combined_by_site))
-
-
-# Save our abgqi data
-write.csv(abgqi_corrected_combined_by_hr, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_hourly_abgqi_31May2022.csv'), row.names = FALSE)
-write.csv(abgqi_corrected_combined_by_site, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_site_abgqi_31May2022.csv'), row.names = FALSE)
-
-```
-
 
 

@@ -1,0 +1,456 @@
+---
+title: "3_test_apply_lm_corrections"
+output: html_document
+---
+
+
+TO DO:
+- retest Wilcoxon for features to keep corrections or toss
+- get hourly (not 24, 1hr) csvs to apply linear regression
+
+```{r}
+ll = '/projects/tropics/users/cquinn/R_400/'
+.libPaths(c( .libPaths(), ll))
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+source('/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
+```
+
+```{r}
+wd = '/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
+model_list = readRDS(paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models.rds'))
+```
+
+0. Bring in paired ARU csv
+```{r}
+wd = '/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
+
+# read in paired ARU csv with AM site list and LG site list
+paired_df = read.csv(paste0(wd,'results/paired_ARUs/colocated_ARUs-paired.csv')) %>%
+  dplyr::select(SiteID, Number.of.Recordings, Paired_site) %>%
+  filter(grepl('am', SiteID)) # 24 paired sites (48 ARUs)
+
+# Read in paired csvs
+pair_preds = abgqi_pair_reader(paired_df) %>%
+  filter(!(SiteID == 3 | SiteID == 5))
+pair_indices = acoustic_index_pair_reader(paired_df) %>%
+  filter(!(SiteID == 3 | SiteID == 5))
+```
+
+```{r}
+# Derive average hourly and site values
+# ABGQI
+pair_preds$DDHH = substr(pair_preds$DDHHmm,1,4)
+by_hr_abgqi = pair_preds %>%
+  select(-wav, -DDHHmm, -melspec) %>%
+  group_by(SiteID, site_AM, site_LG, soundType, DDHH) %>%
+  summarise(across(everything(), mean)) 
+
+by_site_abgqi = pair_preds %>%
+  select(-wav, -DDHHmm, -melspec, -DDHH) %>%
+  group_by(SiteID, site_AM, site_LG, soundType) %>%
+  summarise(across(everything(), mean)) 
+
+
+# Acoustic indices
+pair_indices$DDHH = substr(pair_indices$DDHHmm,1,4)
+by_hr_indices = pair_indices %>%
+  select(-wav, -DDHHmm) %>%
+  group_by(SiteID, site_AM, site_LG, acIndex, DDHH) %>%
+  summarise(across(everything(), mean))
+
+by_site_indices = pair_indices %>%
+  select(-wav, -DDHHmm, -DDHH) %>%
+  group_by(SiteID, site_AM, site_LG, acIndex) %>%
+  summarise(across(everything(), mean))
+```
+
+
+1. Check whether corrected LG data results in non-significant Wilcoxon tests
+ANTHROPHONY
+```{r}
+# check our model for transformations
+model_list$Anthro
+
+# create new transformed data to predict on
+corrected_df = by_hr_abgqi %>%
+  ungroup() %>%
+  filter(soundType == 'Anthrophony') %>%
+  select(SiteID, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$Anthro, newdata = corrected_df)
+
+# transform response (logAM) back to standard scale (0-1)
+corrected_df = corrected_df %>%
+  mutate(LG_corr = exp(y_pred)) %>%
+  mutate(LG_corr = ifelse(LG_corr > 1, 1, LG_corr))
+
+# HOURLY
+# V = 798691, p-value = 1.222e-12
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+
+# SITE
+# V = 170, p-value = 0.1659
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG_corr) %>%
+  rename(LG = LG_corr) %>%
+  index_boxplot()
+```
+
+BIOPHONY
+```{r}
+# check our model for transformations
+model_list$Biophony
+
+# create new transformed data to predict on
+corrected_df = by_hr_abgqi %>%
+  ungroup() %>%
+  filter(soundType == 'Biophony') %>% 
+  select(SiteID, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$Biophony, newdata = corrected_df)
+
+# transform back to response scale (0-1)
+corrected_df = corrected_df %>%
+  mutate(LG_corr = y_pred^2)
+
+# V = 681808, p-value = 0.3434
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+# SITE
+# V = 137, p-value = 0.7502
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG_corr) %>%
+  rename(LG = LG_corr) %>%
+  index_boxplot()
+```
+
+QUIET
+```{r}
+# check our model for transformations
+model_list$Quiet
+summary(model_list$Quiet)
+
+# create new transformed data to predict on
+corrected_df = by_hr_abgqi %>%
+  ungroup() %>%
+  filter(soundType == 'Quiet') %>%
+  select(SiteID, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$Quiet, newdata = corrected_df)
+
+# Quiet AM was not transformed, prediction is on standard scale
+corrected_df = corrected_df %>%
+  mutate(LG_corr = y_pred)
+
+# V = 644929, p-value = 0.3199
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+corrected_df %>%
+  select(AM, LG_corr) %>%
+  rename(LG = LG_corr) %>%
+  index_boxplot()
+
+# SITE
+# V = 122, p-value = 0.8987
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG, LG_corr) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.3) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "Paired ARU corrections by-site for Quiet") +
+      ylab('Percent present') +
+      xlab('ARU model')
+  
+```
+
+INTERFERENCE
+```{r}
+# check our model for transformations
+model_list$Interference
+
+# create new transformed data to predict on
+corrected_df = by_hr_abgqi %>%
+  ungroup() %>%
+  filter(soundType == 'Interference') %>%
+  select(SiteID, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$Interference, newdata = corrected_df)
+
+# transform response (logAM) back to standard scale (0-1)
+corrected_df = corrected_df %>%
+  mutate(LG_corr = exp(y_pred)) %>%
+  mutate(LG_corr = ifelse(LG_corr > 1, 1, LG_corr))
+
+# V = 777671, p-value = 2.04e-09
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+# SITE
+# V = 183, p-value = 0.06844
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG, LG_corr) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
+  
+```
+
+ACI
+```{r}
+# check our model for transformations
+model_list$ACI
+
+# create new transformed data to predict on
+corrected_df = by_hr_indices %>%
+  ungroup() %>%
+  filter(acIndex == 'ACI') %>%
+  mutate(logLG = log(LG + 0.000001)) %>%
+  select(SiteID, logLG, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$ACI, newdata = corrected_df)
+
+# transform response (logAM)
+corrected_df = corrected_df %>%
+  mutate(LG_corr = exp(y_pred))
+
+# V = 848015, p-value < 2.2e-16
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+# SITE
+# V = 212, p-value = 0.004151
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG, LG_corr) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
+  
+```
+
+ADI
+```{r}
+# check our model for transformations
+model_list$ADI
+
+# create new transformed data to predict on
+corrected_df = by_hr_indices %>%
+  ungroup() %>%
+  filter(acIndex == 'ADI') #%>%
+ # mutate(logLG = log(LG + 0.000001)) %>%
+  #select(SiteID, logLG, AM, LG)
+
+# prediction
+corrected_df$y_pred = predict(model_list$ADI, newdata = corrected_df)
+
+# transform response (logAM)
+corrected_df = corrected_df %>%
+  mutate(LG_corr = exp(y_pred))
+
+# V = 2989, p-value < 2.2e-16
+(mod = wilcox.test(corrected_df$AM, corrected_df$LG_corr, paired = TRUE))
+
+# SITE
+# V = 0, p-value = 4.768e-07
+corrected_df_site = corrected_df%>%
+  group_by(SiteID) %>%
+  summarise(across(everything(), mean))
+(mod = wilcox.test(corrected_df_site$AM, corrected_df_site$LG_corr, paired = TRUE))
+
+corrected_df_site %>%
+  select(AM, LG, LG_corr) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+  geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
+  
+```
+
+AEI
+
+
+H
+
+
+Hs
+
+
+Ht
+
+
+BI
+
+
+R
+
+
+rugo
+
+
+sfm
+
+
+zcr_mean
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2. Apply any corrections to the by-hour acoustic data
+ABGQI
+```{r}
+# read in ABGQI by_hour
+by_hr_df = read.csv(paste0(wd,'results/ABGQI_inference/averages/site_by_hour_all_ABGQI.csv'))
+by_hr_df$ARU = substr(by_hr_df$site, 4,5)
+lg_by_hr = by_hr_df %>%
+  filter(ARU == 'lg') # select only lg sites to correct
+```
+
+```{r}
+# ANTHRO CORRECTION
+# check our model for transformations
+model_list$Anthro
+
+# create new transformed data to predict on
+x = lg_by_hr %>%
+  mutate(logLG = log(Anthropophony + 0.000001)) %>%
+  select(logLG)
+
+# prediction
+lg_by_hr$anthro_pred = predict(model_list$Anthro, newdata = x)
+
+# transform back to response scale (0-1)
+lg_by_hr = lg_by_hr %>%
+  mutate(anthro_corrected = exp(anthro_pred)) %>%
+  mutate(anthro_corrected = ifelse(anthro_corrected > 1, 1, anthro_corrected))
+```
+```{r}
+# BIOPHONY CORRECTION
+model_list$Biophony
+x = lg_by_hr %>%
+  mutate(sqrtLG = sqrt(Biophony)) %>%
+  select(sqrtLG)
+lg_by_hr$biophony_pred = predict(model_list$Biophony, newdata = x)
+
+# transform expo
+lg_by_hr = lg_by_hr %>%
+  mutate(biophony_corrected = biophony_pred^2)
+```
+```{r}
+# QUIET CORRECTION
+# check our model for transformations
+model_list$Quiet
+
+# create new transformed data to predict on
+x = lg_by_hr %>%
+  mutate(LG2 = Quiet^2) %>%
+  select(LG2)
+
+# prediction
+lg_by_hr$quiet_pred = predict(model_list$Quiet, newdata = x)
+
+# No transform needed
+lg_by_hr = lg_by_hr %>%
+  mutate(quiet_corrected = quiet_pred)
+
+```
+```{r}
+# INTERFERENCE CORRECTION
+# check our model for transformations
+model_list$Interference
+
+# create new transformed data to predict on
+x = lg_by_hr %>%
+  mutate(logLG = log(Interference + 0.000001)) %>%
+  select(logLG)
+
+# prediction
+lg_by_hr$interference_pred = predict(model_list$Interference, newdata = x)
+
+# transform back to response scale (0-1)
+lg_by_hr = lg_by_hr %>%
+  mutate(interference_corrected = exp(interference_pred)) %>%
+  mutate(interference_corrected = ifelse(interference_corrected > 1, 1, interference_corrected))
+```
+
+
+3. Combine AM and corrected LG hourly data, average to site values, and save tables
+```{r}
+# combine out corrected lg data back into am data 
+am_by_hr = by_hr_df %>%
+  filter(ARU == 'am') %>% # select only lg sites to correct
+  select(-Unidentified)
+lg_by_hr = lg_by_hr %>%
+  select(site, MM, DD, HH, anthro_corrected, biophony_corrected, Geophony, quiet_corrected, interference_corrected, n, ARU) %>%
+  rename(Anthropophony = anthro_corrected, 
+         Biophony = biophony_corrected, 
+         Quiet = quiet_corrected, 
+         Interference = interference_corrected)
+
+# Concatenate rows
+abgqi_corrected_combined_by_hr = rbind(am_by_hr, lg_by_hr)
+
+# create site avg 
+abgqi_corrected_combined_by_site = abgqi_corrected_combined_by_hr %>%
+  select(-MM, -DD, -HH, -ARU, -n) %>%
+  group_by(site) %>%
+  summarise(across(everything(), list(mean))) 
+colnames(abgqi_corrected_combined_by_site) = sub("*_1$", "", colnames(abgqi_corrected_combined_by_site))
+
+
+# Save our abgqi data
+write.csv(abgqi_corrected_combined_by_hr, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_hourly_abgqi_31May2022.csv'), row.names = FALSE)
+write.csv(abgqi_corrected_combined_by_site, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_site_abgqi_31May2022.csv'), row.names = FALSE)
+
+```
+
+
+

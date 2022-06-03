@@ -13,14 +13,6 @@ source('/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_f
 ```
 
 TO DO
-- run all subsequent/needed LMs
-- retest Wilcoxon for features to keep corrections or toss
-- get hourly (not 24, 1hr) csvs to apply linear regression
-  
-
-```{r}
-
-```
 
 
 
