@@ -1,0 +1,581 @@
+---
+title: "4_apply_lm_corrections"
+output: html_document
+---
+
+TO DO:
+- get hourly (not 24, 1hr) csvs to apply linear regression
+
+```{r}
+ll = '/projects/tropics/users/cquinn/R_400/'
+.libPaths(c( .libPaths(), ll))
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+source('/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
+```
+
+```{r}
+wd = '/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
+# model_list = readRDS(paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models.rds'))
+model_list = readRDS(paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models-no_outlier_rm.rds'))
+```
+
+
+1. Apply any corrections to the by-hour acoustic data
+ABGQI
+```{r}
+# read in ABGQI by_hour
+by_hr_df = read.csv(paste0(wd,'results/ABGQI_inference/averages/site_by_hour_all_ABGQI.csv'))
+by_hr_df$ARU = substr(by_hr_df$site, 4,5)
+lg_by_hr = by_hr_df %>%
+  filter(ARU == 'lg') # select only lg sites to correct
+
+# read in hourly acoustic index data
+by_hr_df_index = read.csv(paste0(wd,'results/acoustic_indices_aggregation/averages/site_by_hour_all_acoustic_indices.csv'))
+by_hr_df_index$ARU = substr(by_hr_df_index$site, 4,5)
+lg_by_hr_index = by_hr_df_index %>%
+  filter(ARU == 'lg') # select only lg sites to correct
+```
+
+```{r}
+# ANTHRO CORRECTION
+# check our model for transformations
+model_list$Anthro
+
+# create new transformed data to predict on
+temp = lg_by_hr %>%
+  select(Anthropophony) %>%
+  rename(LG = Anthropophony)
+
+# prediction
+lg_by_hr$anthro_pred = predict(model_list$Anthro, newdata = temp)
+
+# transform back to response scale (0-1)
+lg_by_hr = lg_by_hr %>%
+  mutate(anthro_corrected = exp(anthro_pred)) %>%
+  mutate(anthro_corrected = ifelse(anthro_corrected > 1, 1, anthro_corrected))
+
+# visualize correction
+lg_by_hr %>%
+  select(Anthropophony, anthro_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+```
+
+```{r}
+# BIOPHONY CORRECTION
+model_list$Biophony
+temp = lg_by_hr %>%
+  select(Biophony) %>%
+  rename(LG = Biophony)
+
+lg_by_hr$biophony_pred = predict(model_list$Biophony, newdata = temp)
+
+# transform expo
+lg_by_hr = lg_by_hr %>%
+  mutate(biophony_corrected = biophony_pred^2)
+
+# visualize correction
+lg_by_hr %>%
+  select(Biophony, biophony_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+```
+
+```{r}
+# QUIET CORRECTION
+# check our model for transformations
+model_list$Quiet
+
+# create new transformed data to predict on
+temp = lg_by_hr %>%
+  select(Quiet) %>%
+  rename(LG = Quiet)
+
+# prediction
+lg_by_hr$quiet_pred = predict(model_list$Quiet, newdata = temp)
+
+# No transform needed
+lg_by_hr = lg_by_hr %>%
+  mutate(quiet_corrected = quiet_pred)
+
+# visualize correction
+lg_by_hr %>%
+  select(Quiet, quiet_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+```
+
+```{r}
+# INTERFERENCE CORRECTION
+# check our model for transformations
+model_list$Interference
+
+# create new transformed data to predict on
+temp = lg_by_hr %>%
+  select(Interference) %>%
+  rename(LG = Interference)
+
+# prediction
+lg_by_hr$interference_pred = predict(model_list$Interference, newdata = temp)
+
+# transform back to response scale (0-1)
+lg_by_hr = lg_by_hr %>%
+  mutate(interference_corrected = exp(interference_pred)) %>%
+  mutate(interference_corrected = ifelse(interference_corrected > 1, 1, interference_corrected))
+
+# visualize correction
+lg_by_hr %>%
+  select(Interference, interference_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+rm(temp)
+```
+
+```{r}
+# ACI CORRECTION
+# check our model for transformations
+model_list$ACI
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(ACI) %>%
+  rename(LG = ACI)
+
+# prediction
+lg_by_hr_index$ACI_pred = predict(model_list$ACI, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(ACI_corrected = exp(ACI_pred))
+
+# visualize correction
+gg = lg_by_hr_index %>%
+  select(ACI, ACI_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+gg + am_by_hr_index %>%
+  select(ACI) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
+gg
+rm(temp)
+```
+
+```{r}
+# ADI CORRECTION
+# check our model for transformations
+model_list$ADI
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(ADI) %>%
+  rename(LG = ADI)
+
+# prediction
+lg_by_hr_index$ADI_pred = predict(model_list$ADI, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(ADI_corrected = (ADI_pred)^(1/3))
+
+# visualize correction
+lg_by_hr_index %>%
+  select(ADI, ADI_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+summary(by_hr_df_index$ADI)
+summary(lg_by_hr_index$ADI)
+summary(lg_by_hr_index$ADI_corrected)
+
+rm(temp)
+```
+
+```{r}
+# AEI CORRECTION
+# check our model for transformations
+model_list$AEI
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(AEI) %>%
+  rename(LG = AEI)
+
+# prediction
+lg_by_hr_index$AEI_pred = predict(model_list$AEI, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(AEI_corrected = (AEI_pred)^2)
+
+# visualize correction
+lg_by_hr_index %>%
+  select(AEI, AEI_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+
+summary(by_hr_df_index$AEI)
+summary(lg_by_hr_index$AEI)
+summary(lg_by_hr_index$AEI_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# BI CORRECTION
+# check our model for transformations
+model_list$BI
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(BI) %>%
+  rename(LG = BI)
+
+# prediction
+lg_by_hr_index$BI_pred = predict(model_list$BI, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(BI_corrected = exp(BI_pred))
+
+# visualize correction
+lg_by_hr_index %>%
+  select(BI, BI_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+
+summary(by_hr_df_index$BI)
+summary(lg_by_hr_index$BI)
+summary(lg_by_hr_index$BI_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# H CORRECTION
+# check our model for transformations
+model_list$H
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(H) %>%
+  rename(LG = H)
+
+# prediction
+lg_by_hr_index$H_pred = predict(model_list$H, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(H_corrected = fromLogit(H_pred))
+
+# visualize correction
+lg_by_hr_index %>%
+  select(H, H_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+
+summary(by_hr_df_index$H)
+summary(lg_by_hr_index$H)
+summary(lg_by_hr_index$H_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# Hs CORRECTION
+# check our model for transformations
+model_list$Hs
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(Hs) %>%
+  rename(LG = Hs)
+
+# prediction
+lg_by_hr_index$Hs_pred = predict(model_list$Hs, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(Hs_corrected = fromLogit(Hs_pred))
+
+# visualize correction
+lg_by_hr_index %>%
+  select(Hs, Hs_corrected) %>%
+  gather(variable, value) %>%
+  ggplot(aes(x = variable, y = value)) +
+      geom_jitter(width = 0.1, alpha = 0.1) + 
+      geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE) +
+      labs(title = "") +
+      ylab('Uncorrected') +
+      xlab('Corrected')
+
+summary(by_hr_df_index$Hs)
+summary(lg_by_hr_index$Hs)
+summary(lg_by_hr_index$Hs_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# Ht CORRECTION
+# check our model for transformations
+model_list$Ht
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(Ht) %>%
+  rename(LG = Ht)
+
+# prediction
+lg_by_hr_index$Ht_pred = predict(model_list$Ht, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(Ht_corrected = fromLogit(Ht_pred))
+
+summary(by_hr_df_index$Ht)
+summary(lg_by_hr_index$Ht)
+summary(lg_by_hr_index$Ht_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# M CORRECTION
+# check our model for transformations
+model_list$M
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(M) %>%
+  rename(LG = M)
+
+# prediction
+lg_by_hr_index$M_pred = predict(model_list$M, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(M_corrected = exp(M_pred))
+
+summary(by_hr_df_index$M)
+summary(lg_by_hr_index$M)
+summary(lg_by_hr_index$M_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# R CORRECTION
+# check our model for transformations
+model_list$R
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(R) %>%
+  rename(LG = R)
+
+# prediction
+lg_by_hr_index$R_pred = predict(model_list$R, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(R_corrected = exp(R_pred))
+
+summary(by_hr_df_index$R)
+summary(lg_by_hr_index$R)
+summary(lg_by_hr_index$R_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# Rugo CORRECTION
+# check our model for transformations
+model_list$rugo
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(rugo) %>%
+  rename(LG = rugo)
+
+# prediction
+lg_by_hr_index$rugo_pred = predict(model_list$rugo, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(rugo_corrected = exp(rugo_pred))
+
+summary(by_hr_df_index$rugo)
+summary(lg_by_hr_index$rugo)
+summary(lg_by_hr_index$rugo_corrected)
+
+rm(temp)
+```
+
+```{r}
+# sfm CORRECTION
+# check our model for transformations
+model_list$sfm
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(sfm) %>%
+  rename(LG = sfm)
+
+# prediction
+lg_by_hr_index$sfm_pred = predict(model_list$sfm, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(sfm_corrected = (sfm_pred))
+
+summary(by_hr_df_index$sfm)
+summary(lg_by_hr_index$sfm)
+summary(lg_by_hr_index$sfm_corrected)
+
+rm(temp)
+```
+
+
+```{r}
+# zcr_mean CORRECTION
+# check our model for transformations
+model_list$zcr_mean
+
+# create new transformed data to predict on
+temp = lg_by_hr_index %>%
+  select(zcr_mean) %>%
+  rename(LG = zcr_mean)
+
+# prediction
+lg_by_hr_index$zcr_mean_pred = predict(model_list$zcr_mean, newdata = temp)
+
+# transform back to response scale
+lg_by_hr_index = lg_by_hr_index %>%
+  mutate(zcr_mean_corrected = (zcr_mean_pred))
+
+summary(by_hr_df_index$zcr_mean)
+summary(lg_by_hr_index$zcr_mean)
+summary(lg_by_hr_index$zcr_mean_corrected)
+
+rm(temp)
+```
+
+
+2. Combine AM and corrected LG hourly data, average to site values, and save tables
+```{r}
+# ABGQI
+# combine out corrected lg data back into am data 
+am_by_hr = by_hr_df %>%
+  filter(ARU == 'am') %>% # select only lg sites to correct
+  select(-Unidentified)
+lg_by_hr = lg_by_hr %>%
+  select(site, MM, DD, HH, anthro_corrected, biophony_corrected, Geophony, 
+         quiet_corrected, interference_corrected, n, ARU) %>%
+  rename(Anthropophony = anthro_corrected, 
+         Biophony = biophony_corrected, 
+         Quiet = quiet_corrected, 
+         Interference = interference_corrected)
+
+# Concatenate rows
+abgqi_corrected_combined_by_hr = rbind(am_by_hr, lg_by_hr)
+
+# create site avg 
+abgqi_corrected_combined_by_site = abgqi_corrected_combined_by_hr %>%
+  select(-MM, -DD, -HH, -ARU, -n) %>%
+  group_by(site) %>%
+  summarise(across(everything(), mean))
+
+
+# Save our abgqi data
+write.csv(abgqi_corrected_combined_by_hr, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_hourly_abgqi_03June2022.csv'), row.names = FALSE)
+write.csv(abgqi_corrected_combined_by_site, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_site_abgqi_03June2022.csv'), row.names = FALSE)
+
+
+# ACOUSTIC INDICES
+# temp = lg_by_hr_index
+# combine out corrected lg data back into am data 
+am_by_hr_index = by_hr_df_index %>%
+  filter(ARU == 'am') %>% # select only lg sites to correct
+  select(-zcr_max, -zcr_min)
+lg_by_hr_index = lg_by_hr_index %>%
+  select(site, MM, DD, HH, n, ARU, YYYY, ACI_corrected, ADI_corrected, AEI_corrected, 
+         NDSI, NDSI_A, NDSI_B,BI_corrected, H_corrected, Hs_corrected, Ht_corrected, 
+         M_corrected, R_corrected, rugo_corrected, sfm_corrected, zcr_mean_corrected) %>%
+  rename(ACI = ACI_corrected, ADI = ADI_corrected, AEI = AEI_corrected, BI = BI_corrected,
+         H = H_corrected, Hs = Hs_corrected, Ht = Ht_corrected, M = M_corrected, R = R_corrected,
+         rugo = rugo_corrected, sfm = sfm_corrected, zcr_mean = zcr_mean_corrected)
+
+# Concatenate rows
+index_corrected_combined_by_hr = rbind(am_by_hr_index, lg_by_hr_index)
+
+# create site avg 
+index_corrected_combined_by_site = index_corrected_combined_by_hr %>%
+  select(-MM, -DD, -HH, -ARU, -n, -YYYY) %>%
+  group_by(site) %>%
+  summarise(across(everything(), mean))
+
+
+# Save our abgqi data
+write.csv(index_corrected_combined_by_hr, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_hourly_acousticindices_03June2022.csv'), row.names = FALSE)
+write.csv(index_corrected_combined_by_site, paste0(wd, 'results/paired_ARUs/corrected_data/corrected_site_acousticindices_03June2022.csv'), row.names = FALSE)
+```
+
+
+

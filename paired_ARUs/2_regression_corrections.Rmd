@@ -97,13 +97,8 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logAM - temp$logLG # use AM-LG difference as extreme values at the ARU may be okay but extreme differences will negatively impact the LM()
-hist(diff_am_lg)
-plot(temp$AM, temp$LG)
-# scale values
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
+outliers = outlier_id(diff_am_lg)
 temp = temp[-outliers,]
-
 
 # Model transformed, outlier-removed data
 mod = lm(log(AM) ~ log(LG), data = temp)
@@ -137,8 +132,7 @@ temp = temp %>%
 
 # Outlier analysis
 diff_am_lg = temp$sqrtAM - temp$sqrtLG 
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
+outliers = outlier_id(diff_am_lg)
 temp = temp[-outliers,]
 
 # check distribution
@@ -172,9 +166,7 @@ corr_plotter(temp)
 # Outlier analysis
 diff_am_lg = temp$AM - temp$LG2
 # scale values
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # Model
 mod = lm(AM ~ LG^2, data = temp)
@@ -208,9 +200,7 @@ corr_plotter(temp)
 # Outlier analysis
 diff_am_lg = temp$logAM - temp$logLG
 # scale values
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 mod = lm(log(AM) ~ log(LG), data = temp)
 summary(mod)
@@ -241,10 +231,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logAM - temp$logLG
-# scale values
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(log(AM) ~ log(LG), data = temp)
@@ -276,9 +263,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$AM3 - temp$LG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(AM^3 ~ LG, data = temp)
@@ -311,9 +296,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$sqrtAM - temp$LG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(sqrt(AM) ~ LG, data = temp)
@@ -346,9 +329,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logAM - temp$logLG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(log(AM) ~ log(LG), data = temp)
@@ -382,9 +363,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logitAM - temp$logitLG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
@@ -417,9 +396,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logitAM - temp$logitLG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
@@ -452,9 +429,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logitAM - temp$logitLG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(toLogit(AM) ~ toLogit(LG), data = temp)
@@ -487,9 +462,7 @@ corr_plotter(temp)
 
 # Outlier analysis
 diff_am_lg = temp$logAM - temp$logLG
-MAD_values = MAD_z(diff_am_lg)
-outliers = which(abs(MAD_values) >= 3)
-temp = temp[-outliers,]
+temp = temp[-outlier_id(diff_am_lg),]
 
 # fit model
 mod = lm(log(AM+0.0000001) ~ log(LG+0.0000001), data = temp)
@@ -505,7 +478,7 @@ ggplot(temp, aes(x=LG)) +
   geom_line(aes(y = exp(fit)), color = 'red') +
   geom_point(aes(y = AM)) 
 
-model_list['Hs'] = list(mod)
+model_list['M'] = list(mod)
 ```
 
 ```{r}
@@ -657,7 +630,7 @@ model_list['zcr_mean'] = list(mod)
 
 
 ```{r}
-saveRDS(model_list, file = paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models.rds'))
+saveRDS(model_list, file = paste0(wd, 'results/paired_ARUs/corrected_data/lm_paired_ARU_models-no_outlier_rm.rds'))
 ```
 
 
