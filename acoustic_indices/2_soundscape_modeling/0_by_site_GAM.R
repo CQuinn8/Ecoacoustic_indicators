@@ -21,16 +21,16 @@
 # MODELING NOTES
 # NDSI: (June8) complete
 # ACI: (June9) complete: a few small deviations in qq plot otherwise okay
-# ADI: (June9) complete: used beta distrubition on min max normalized values [0-1]
-# AEI: (June9) complete: relatively simple but sufficient model
-# BI: (June9) complete - possible model visual started too
-# H: (June9) complete
-# Hs: (June9) complete: model may be too simple -revisit
-# Ht:
-# M:
-# NDSI_A:
-# NDSI_B:
-# R:
+# ADI: (June9) (go back to look at outliers) complete: used beta distrubition on min max normalized values [0-1] 
+# AEI: (June9) (go back to look at outliers) complete: relatively simple but sufficient model
+# BI: (June9) (go back to look at outliers) complete - possible model visual started too
+# H: (June9) (go back to look at outliers) complete
+# Hs: (June9) (go back to look at outliers) complete: model may be too simple -revisit
+# Ht: (June10) (go back to look at outliers) complete
+# M: (June10) complete
+# NDSI_A: (June10) complete
+# NDSI_B: (June10) complete
+# R: needs a better family or a data trasformation
 # rugo:
 # sfm:
 # zcr_mean:
@@ -68,24 +68,35 @@ indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_ac
 # Total minutes pre-analyses
 sum(abgqi_df$wavs) # 741061
 
+# Clean sites that are known problems
+# 1. insufficient number of recordings
+# 2. Sites known to have constant static error
+# functioning sites always had > 2.5 days (60 hours) of recordings
+abgqi_df = abgqi_df %>%
+  filter(wavs >= (144 * 2.5)) # 44 sites
+
+# sites with static
+static_sites = paste("s2lam012_190506", "s2lam018_190517", "s2lam012_190529", "s2lam012_190605","s2lam048_200710", sep = "|")
+abgqi_df = abgqi_df[!grepl(static_sites, abgqi_df$site),] # 1 site still in list - the site with highest %Interfernce 
+
 # Clean sites with anamolous values
-# 1. Top 0.1% of Sites with significant interference (e.g., Int > 4sd(Int))
-# 2. Sites with any value == 1
-# 3. Zero averages -> median value
+# 1. Sites with any value == 1
+# 2. Zero averages -> median value
 # Interference
-int_sd = sd(abgqi_df$Interference)
-mod_df = abgqi_df %>%
-  filter(Interference <= 4 * int_sd) # 20 sites
+# Top 0.1% of Sites with significant interference (e.g., Int > 4sd(Int))
+# int_sd = sd(abgqi_df$Interference)
+# mod_df = abgqi_df %>%
+#   filter(Interference <= 4 * int_sd) # 18 sites
 
 # only one site with any value == 1 (quiet)
-mod_df = mod_df %>%
+mod_df = abgqi_df %>%
   filter(Quiet < 1)
 
 # account for zero values
 mod_df[mod_df == 0] = NA
 
 # Which rows contain zeroes
-zeros_df = mod_df[!complete.cases(mod_df),] # n = 24: 22 are quiet, 1 Anthro & Geo, 1 Int
+zeros_df = mod_df[!complete.cases(mod_df),] # n = 20 all are quiet
 
 # calculate medians
 medians = mod_df %>%
@@ -96,7 +107,7 @@ mod_df = mod_df %>%
   mutate(across(where(is.numeric), .fns = ~ifelse(is.na(.x), median(.x, na.rm=TRUE), .x)))
 
 # Number of minutes in model data
-sum(mod_df$wavs) #731634
+sum(mod_df$wavs) #729808
 
 ###########################################
 ################# NDSI ####################
@@ -104,7 +115,7 @@ i = "NDSI"
 temp_y = data.frame(site = indices_df$site, NDSI = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
   mutate(ARU = factor(ARU)) %>%
-   select(-c(site))
+   select(-c(site, wavs))
 
 # visualize data
 temp_df %>%
@@ -113,28 +124,34 @@ temp_df %>%
     geom_point(alpha = 0.3) +
     geom_smooth(method = "gam") +
     facet_wrap(~soundType)
-  
+hist(temp_df$NDSI)
+
 # add transformed NDSI
 temp_df$posNDSI = temp_df$NDSI + 1
 temp_df$beta_NDSI = (temp_df$NDSI + 1)/2
 temp_df$sq_beta_NDSI = (temp_df$beta_NDSI)^2
 hist(temp_df$beta_NDSI)
 
+# Outliers
+# Visual inspection and model diagnositcs - no gross outliers that cause alarm
+
 # visualize pairs of corr
-temp_df %>%
-  GGally::ggpairs(aes(alpha = 0.05), progress = FALSE)
+# temp_df %>%
+#   GGally::ggpairs(aes(alpha = 0.05), progress = FALSE)
 
 ###### TESTING using: https://www.youtube.com/watch?v=Ukfvd8akfco
 mod1 = gam(NDSI ~ 
-              Anthropophony + 
-              Biophony + 
-              Geophony + 
-              Quiet + 
-              Interference,
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
             data = temp_df)
 summary(mod1)
+par(mfrow = c(2, 2))
+gam.check(mod1) # looks okay - slight tail extreme values in QQ and maybe some nonconstatn variance
 
-# model using beta transformed NDSI
+# model using beta transformed NDSI - bounded 0-1
 mod2 = gam(beta_NDSI ~ 
             s(Anthropophony) + 
             s(Biophony) + 
@@ -145,8 +162,7 @@ mod2 = gam(beta_NDSI ~
           family = betar(),
           method = 'REML')
 summary(mod2) # model summary
-
-AIC(mod1, mod2)
+gam.check(mod2) # diagnostics not drastically better than gaussian but bound on 0-1 assumptionis included here
 
 # add ARU random intercept effect
 mod3 = gam(beta_NDSI ~ 
@@ -161,76 +177,36 @@ mod3 = gam(beta_NDSI ~
            method = 'REML')
 summary(mod3) # model summary
 AIC(mod2, mod3)
-variance_comp(mod3)
+gam.check(mod3)
 
 
-# Add random slopes
+# increase basis functions for Anthro and Quiet
 mod4 = gam(beta_NDSI ~ 
-             ARU + # must include base factor to interpret offset of "by"
-             s(Anthropophony, by = ARU, bs = 're') + 
-             s(Biophony, by = ARU, bs = 're') + 
-             s(Geophony, by = ARU, bs = 're') + 
-             s(Quiet, by = ARU, bs = 're') + 
-             s(Interference, by = ARU, bs = 're') +
-             s(ARU, bs = 're'),
+             s(Anthropophony, k = 25) + 
+             s(Biophony) + 
+             s(Geophony) +
+             s(Quiet, k = 25) + 
+             s(Interference) +
+             s(ARU, bs = 're'), # random intercept
            data = temp_df,
            family = betar(),
            method = 'REML')
 summary(mod4)
-
 AIC(mod3, mod4)
+AIC(mod2, mod4) # delta ARU
+gam.check(mod4)
 
-# Model 3 appears more parsimoniuous
-# remove geophony
-mod5 = gam(beta_NDSI ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = 're'), # random intercept
-           data = temp_df,
-           family = betar(),
-           method = 'REML')
-summary(mod5)
-AIC(mod3, mod5)
+# model 4 is best option
+draw(mod4, scales = "fixed") # nice visualization tool from gratia for partial effects
 
+# smoothing parameters are related to variance components - assesses variation associated with random effects
+# proportion of the variance attributed to RE's main effect
+#variance_comp(mod4)
 
-# model 3 is best option
-mod = mod3
-draw(mod) # nice visualization tool from gratia for partial effects
-
-k.check(mod) 
-
-#appraise(mod2, method = "simulate") 
 # QQ should follow 1:1 wihtin the reference band (do data follow assumptions of model well) some do not
 # residuals should be approx gaussian 
-par(mfrow = c(2, 2))
-vis.gam(mod, theta = 65)
-
-gam.check(mod, rep = 500) # for rep = 500 does the QQ roughly fall within confidence interval? Not at the upper tail
-                           # histogram is roughly gaussian, Resp vs fitted is roughly 1:1, resids vs linear pred may have decreasing variance
-
-mod6 = gam(beta_NDSI ~ 
-             s(Anthropophony, k =100) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet, k =100) + 
-             s(Interference) +
-             s(ARU, bs = 're'), # random intercept
-           data = temp_df,
-           family = betar(),
-           method = 'REML')
-
-summary(mod6) # model summary
-AIC(mod3, mod6)
-
-draw(mod6)
-
-gam.check(mod6)
-
-
-# credible intervals 
-pred = predict.gam(mod, type = "lpmatrix")
+vis.gam(mod4, theta = 65)
+gam.vcomp(mod4)
 
 
 ###########################################
@@ -238,7 +214,7 @@ pred = predict.gam(mod, type = "lpmatrix")
 i = "ACI"
 temp_y = data.frame(site = indices_df$site, ACI = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
-  mutate(ARU = factor(ARU)) %>%
+  mutate(ARU = factor(ARU)) #%>%
   select(-c(site,wavs))
 
 # visualize data
@@ -251,7 +227,6 @@ temp_df %>%
 ggplot(temp_df, aes(x = ACI, fill = ARU)) +
   geom_histogram()
 
-
 # add transformed 
 # bring ACI down to 0
 temp_df$ACI_0 = temp_df$ACI - min(temp_df$ACI) + 1e-7
@@ -262,11 +237,11 @@ temp_df$sqrt_ACI = sqrt(temp_df$ACI)
 ggplot(temp_df, aes(x = ACI_0, fill = ARU)) +
   geom_histogram()
 
-# remove one extremely high value
-outlier(temp_df$ACI)
-temp_df = temp_df %>%
-  filter(ACI < outlier(ACI))
-# faraway::halfnorm(temp_df$ACI)
+# Extreme ACI values (high):
+# 193, 192: have very high amount of interference
+# outlier(temp_df$ACI)
+# temp_df = temp_df %>%
+#   filter(ACI < outlier(ACI))
 
 # visualize pairs of corr
 temp_df %>%
@@ -312,26 +287,24 @@ mod3 = gam(ACI_0 ~
            method = 'REML')
 summary(mod3)
 AIC(mod2, mod3) # prefer mod3 with RE
-draw(mod3, scales = "fixed") 
-appraise(mod3, method = "simulate") # only works with gaussian data
 gam.check(mod3, rep = 500)
 
-# increase anthropophony basis functions per gam.check
+# remove Quiet (p > 0.05)
 mod4 = gam(ACI_0 ~ 
-             s(Anthropophony, k = 25) + 
+             s(Anthropophony) + 
              s(Biophony) + 
              s(Geophony) + 
-             s(Quiet) + 
              s(Interference) +
              s(ARU, bs = 're', k = 2),
            data = temp_df,
            family = Gamma(link = "log"),
            method = 'REML')
 summary(mod4)
-gam.check(mod4) # Anthro is >0.05 and edf is << than k'
-AIC(mod3, mod4)
-draw(mod4, scales = "fixed")
+AIC(mod3, mod4) # prefer mod4: parsimony
+gam.check(mod4, rep = 500)
 
+draw(mod4, scales = "fixed") 
+appraise(mod4, method = "simulate") # only works with gaussian data
 
 ###########################################
 ################# ADI #####################
@@ -715,6 +688,7 @@ summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # QQ plot has lower tail issues
 
+
 # try with betar family distribution
 mod2 = gam(Hs ~ 
              s(Anthropophony) + 
@@ -745,6 +719,423 @@ AIC(mod2, mod3)
 gam.check(mod3) # slightly worse QQ patterns, residuals have possible taper pattern, histogram still has sharp peak
 draw(mod3, scales = "fixed")
 
+
+
+###########################################
+################# Ht ######################
+i = "Ht"
+temp_y = data.frame(site = indices_df$site, Ht = indices_df[[i]])
+temp_df = merge(x = temp_y, y = mod_df) %>% 
+  mutate(ARU = factor(ARU)) %>%
+  select(-c(site,wavs))
+
+# visualize data
+temp_df %>%
+  gather(soundType, value, -Ht, -ARU) %>%
+  ggplot(aes(x = value, y = Ht, colour = ARU)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "gam") +
+  facet_wrap(~soundType)
+ggplot(temp_df, aes(x = Ht, fill = ARU)) +
+  geom_histogram()
+summary(temp_df$Ht)
+
+# add transformed 
+# NA - has approximate beta distribution (high alpha low beta)
+
+# visualize pairs of corr
+temp_df %>%
+  GGally::ggpairs(aes(alpha = 0.05))
+
+
+# fit a model
+mod1 = gam(Ht ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod1)
+par(mfrow = c(2, 2))
+gam.check(mod1) # QQ plot has lower tail issues, also possible heteroskedasticity 
+
+# try with betar family distribution
+mod2 = gam(Ht ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = betar(),
+           method = 'REML')
+summary(mod2)
+gam.check(mod2) # better diagnostics, still some influential points though in QQ lower end
+
+# add ARU Random effect
+mod3 = gam(Ht ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference) +
+             s(ARU, bs = 're', k = 2),
+           data = temp_df,
+           family = betar(),
+           method = 'REML')
+summary(mod3)
+AIC(mod2, mod3)
+gam.check(mod3) # slightly worse QQ patterns, residuals have possible taper pattern, histogram still has sharp peak
+draw(mod3, scales="fixed")
+
+# increase basis functions for geophony and quiet
+mod4 = gam(Ht ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony, k = 25) + 
+             s(Quiet, k = 25) + 
+             s(Interference) +
+             s(ARU, bs = 're', k = 2),
+           data = temp_df,
+           family = betar(),
+           method = 'REML')
+summary(mod4)
+AIC(mod3, mod4)
+gam.check(mod4) # fixed k issues
+draw(mod4, scales = "fixed")
+
+
+###########################################
+################# M ######################
+i = "M"
+temp_y = data.frame(site = indices_df$site, M = indices_df[[i]])
+temp_df = merge(x = temp_y, y = mod_df) %>% 
+  mutate(ARU = factor(ARU))
+
+# visualize data
+temp_df %>%
+  select(-site, -wavs) %>%
+  gather(soundType, value, -M, -ARU) %>%
+  ggplot(aes(x = value, y = M, colour = ARU)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "gam") +
+  facet_wrap(~soundType)
+ggplot(temp_df, aes(x = M, fill = ARU)) +
+  geom_histogram()
+summary(temp_df$M)
+
+# Extreme high values are in M
+# 73 - no discernable patterns
+# 810, 526 - both have extremely high amounts of interference
+
+# visualize pairs of corr
+# temp_df %>%
+#   GGally::ggpairs(aes(alpha = 0.05))
+
+# fit a model
+mod1 = gam(M ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod1)
+par(mfrow = c(2, 2))
+gam.check(mod1) # wrong family in model - QQ plot plot has heavy deviations, increasing variance in residuals
+
+# try beta family
+mod2 = gam(M ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = betar,
+           method = 'REML')
+summary(mod2)
+gam.check(mod2) # still some heavy deviations in QQ plot, improved heterosk in resids plot
+
+# try gamma family
+mod3 = gam(M ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = Gamma(link = "log"),
+           method = 'REML')
+summary(mod3)
+gam.check(mod3) # looks like gamma family is the way to go - Q plot tails are brought down with gamma
+
+# add random effect
+mod4 = gam(M ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = Gamma(link = "log"),
+           method = 'REML')
+summary(mod4)
+AIC(mod3, mod4)
+gam.check(mod4)
+
+# remove Quiet (p > 0.05)
+mod5 = gam(M ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = Gamma(link = "log"),
+           method = 'REML')
+summary(mod5)
+AIC(mod4, mod5)
+gam.check(mod5)
+
+
+###########################################
+################# NDSI_A ##################
+i = "NDSI_A"
+temp_y = data.frame(site = indices_df$site, NDSI_A = indices_df[[i]])
+temp_df = merge(x = temp_y, y = mod_df) %>% 
+  mutate(ARU = factor(ARU))
+
+# visualize data
+temp_df %>%
+  select(-site, -wavs) %>%
+  gather(soundType, value, -NDSI_A, -ARU) %>%
+  ggplot(aes(x = value, y = NDSI_A, colour = ARU)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "gam") +
+  facet_wrap(~soundType)
+ggplot(temp_df, aes(x = NDSI_A, fill = ARU)) +
+  geom_histogram()
+summary(temp_df$NDSI_A)
+
+# No extreme values in NDSI_A
+
+# visualize pairs of corr
+# temp_df %>%
+#   GGally::ggpairs(aes(alpha = 0.05))
+
+# fit a model
+mod1 = gam(NDSI_A ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod1)
+par(mfrow = c(2, 2))
+gam.check(mod1) # family could be okay - based on 0-1 bounding try beta
+
+# beta
+mod2 = gam(NDSI_A ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = betar,
+           method = 'REML')
+summary(mod2)
+gam.check(mod2) # margnially better QQ pattern and residuals
+
+# beta + Random effects
+mod3 = gam(NDSI_A ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = betar,
+           method = 'REML')
+summary(mod3)
+gam.check(mod3) # marginally better QQ pattern and residuals 
+AIC(mod2, mod3)
+
+# need to increase basis fxs for anthro and quiet
+mod4 = gam(NDSI_A ~ 
+             s(Anthropophony, k = 25) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet, k = 25) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod4)
+gam.check(mod4) # no increase in edf
+AIC(mod3, mod4) # mod3 is preferred
+
+###########################################
+################# NDSI_B ##################
+i = "NDSI_B"
+temp_y = data.frame(site = indices_df$site, NDSI_B = indices_df[[i]])
+temp_df = merge(x = temp_y, y = mod_df) %>% 
+  mutate(ARU = factor(ARU))
+
+# visualize data
+temp_df %>%
+  select(-site, -wavs) %>%
+  gather(soundType, value, -NDSI_B, -ARU) %>%
+  ggplot(aes(x = value, y = NDSI_B, colour = ARU)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "gam") +
+  facet_wrap(~soundType)
+ggplot(temp_df, aes(x = NDSI_B, fill = ARU)) +
+  geom_histogram()
+summary(temp_df$NDSI_B)
+
+# No extreme values in NDSI_B
+
+# visualize pairs of corr
+# temp_df %>%
+#   GGally::ggpairs(aes(alpha = 0.05))
+
+# fit a model
+mod1 = gam(NDSI_B ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod1)
+par(mfrow = c(2, 2))
+gam.check(mod1) # diagnostics look good - maybe increasing variance in resids. Based on positive distribution try gamma error
+
+# gamma
+mod2 = gam(NDSI_B ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = Gamma(link = "log"),
+           method = 'REML')
+summary(mod2)
+gam.check(mod2) # worse diagnostics - stick with gaussian
+
+# Gaussian + Random effects
+mod3 = gam(NDSI_B ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod3)
+gam.check(mod3) # equivalent QQ pattern and residuals
+AIC(mod1, mod3) # Random effect recommended
+
+# need to increase basis fxs for anthro and quiet
+mod4 = gam(NDSI_B ~ 
+             s(Anthropophony, k = 25) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet, k = 25) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod4)
+gam.check(mod4) # no increase in edf
+AIC(mod3, mod4) # no significant difference in models - mod3 can be used via parsimony
+
+###########################################
+################# R #######################
+i = "R"
+temp_y = data.frame(site = indices_df$site, R = indices_df[[i]])
+temp_df = merge(x = temp_y, y = mod_df) %>% 
+  mutate(ARU = factor(ARU))
+
+# visualize data
+temp_df %>%
+  select(-site, -wavs) %>%
+  gather(soundType, value, -R, -ARU) %>%
+  ggplot(aes(x = value, y = R, colour = ARU)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "gam") +
+  facet_wrap(~soundType)
+ggplot(temp_df, aes(x = R, fill = ARU)) +
+  geom_histogram()
+summary(temp_df$R) # positive continuous
+
+# A few high, extreme values in R
+# 225 (s2lam021_200710), 204 (s2lam019_200710), 367 (s2lam036_200710) - no discernible patterns
+
+# visualize pairs of corr
+# temp_df %>%
+#   GGally::ggpairs(aes(alpha = 0.05))
+
+# fit a model
+mod1 = gam(R ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod1) # TERRIBLE performance
+par(mfrow = c(2, 2))
+gam.check(mod1) # Terrible approximation 
+
+# gamma
+mod2 = gam(R ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference),
+           data = temp_df,
+           family = Gamma(link = "log"),
+           method = 'REML')
+summary(mod2)
+gam.check(mod2) # better diagnostics but only marginally - still high tails
+
+# Gaussian + Random effects
+mod3 = gam(R ~ 
+             s(Anthropophony) + 
+             s(Biophony) + 
+             s(Geophony) + 
+             s(Quiet) + 
+             s(Interference) +
+             s(ARU, bs = "re", k = 2),
+           data = temp_df,
+           family = gaussian,
+           method = 'REML')
+summary(mod3)
+gam.check(mod3) # equivalent QQ pattern and residuals
+AIC(mod1, mod3) # Random effect recommended
 
 ####
 
