@@ -145,3 +145,33 @@ fromLogit<-function(x){
   bt<-exp(x)/(1+exp(x))
   return(bt)
 }
+
+
+# GAM prediction visualization
+pred_plot = function(data_df, model_fit, index_name, link) {
+  # predict based on original values
+  data_df$y_pred = predict(model_fit, newdata = data_df, type = "response")
+  
+  # covariates in model
+  vars = str_replace(names(model_fit$sp), "s*", "")
+  vars = gsub("[()]", "", vars)
+  
+  data_df %>%
+    select(vars, contains(index_name), y_pred) %>%
+    rename(acoustic_index = contains(index_name, ignore.case = FALSE)) %>%
+    gather(covariate, value, -acoustic_index, -y_pred, -ARU) %>%
+    ggplot(aes(x = value, y = y_pred)) +
+      geom_point(alpha = 0.4) +
+      geom_point(aes(x = value, y = acoustic_index, colour = ARU), alpha = 0.3) +
+      facet_wrap(~covariate) +
+      ggtitle(index_name)
+  
+  # data_df %>%
+  #   select(-site,-wavs) %>%
+  #   rename(acoustic_index = contains(index_name)) %>%
+  #   mutate(y_diff = acoustic_index - y_pred) %>%
+  #   gather(covariate, value, -acoustic_index, -y_pred, -y_diff, -ARU) %>%
+  #     ggplot(aes(x = value, y = y_diff, alpha = 0.4)) +
+  #     geom_point() +
+  #     facet_wrap(~covariate, scales = 'free_x')
+}
