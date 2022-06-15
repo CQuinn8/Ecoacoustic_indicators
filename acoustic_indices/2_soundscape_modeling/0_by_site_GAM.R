@@ -87,27 +87,28 @@ abgqi_df = abgqi_df[!grepl(static_sites, abgqi_df$site),] # 1 site still in list
 
 # Clean sites with anamolous values
 # 1. Sites with any value == 1
-# 2. Zero averages -> median value
 # only one site with any value == 1 (quiet)
 mod_df = abgqi_df %>%
   filter(Quiet < 1)
 
 # account for zero values
-mod_df[mod_df == 0] = NA
+#mod_df[mod_df == 0] = NA
 
 # Which rows contain zeroes
-zeros_df = mod_df[!complete.cases(mod_df),] # n = 20 all are quiet
+#zeros_df = mod_df[!complete.cases(mod_df),] # n = 20 all are quiet
 
 # calculate medians
-medians = mod_df %>%
-  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE)))
+# medians = mod_df %>%
+#   summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE)))
 
 # input medians for 0 (now NA) values
-mod_df = mod_df %>% 
-  mutate(across(where(is.numeric), .fns = ~ifelse(is.na(.x), median(.x, na.rm=TRUE), .x)))
+# mod_df = mod_df %>% 
+#   mutate(across(where(is.numeric), .fns = ~ifelse(is.na(.x), median(.x, na.rm=TRUE), .x)))
 
 # Number of minutes in model data
 sum(mod_df$wavs) #728766
+
+model_slopes = list()
 
 ###########################################
 ################# NDSI ####################
@@ -129,7 +130,6 @@ hist(temp_df$NDSI)
 # add transformed NDSI
 temp_df$posNDSI = temp_df$NDSI + 1
 temp_df$beta_NDSI = (temp_df$NDSI + 1)/2
-temp_df$sq_beta_NDSI = (temp_df$beta_NDSI)^2
 hist(temp_df$beta_NDSI)
 
 # Outliers
@@ -197,8 +197,7 @@ AIC(mod2, mod4) # delta ARU
 gam.check(mod4)
 
 # model 4 is best option
-draw(mod4, scales = "fixed") # nice visualization tool from gratia for partial effects
-
+draw(mod4, scales = "fixed", ) # nice visualization tool from gratia for partial effects
 # smoothing parameters are related to variance components - assesses variation associated with random effects
 # proportion of the variance attributed to RE's main effect
 #variance_comp(mod4)
@@ -208,6 +207,9 @@ draw(mod4, scales = "fixed") # nice visualization tool from gratia for partial e
 vis.gam(mod4, theta = 65)
 gam.vcomp(mod4)
 
+# summarized slopes
+ci = slope_summary(mod4)
+model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
 
 ###########################################
 ################# ACI #####################
@@ -297,6 +299,10 @@ gam.check(mod4, rep = 500)
 
 draw(mod4, scales = "fixed") 
 appraise(mod4, method = "simulate") # only works with gaussian data
+
+# summarized slopes
+ci = slope_summary(mod4)
+model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
 
 ###########################################
 ################# ADI #####################
@@ -1368,7 +1374,81 @@ draw(mod2, scales = "fixed")
 pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 
 
+
+###########################################
+######### Visualize effects ###############
+# https://stats.stackexchange.com/questions/308244/confidence-interval-for-the-slope-of-a-gam
+# fd = fderiv(mod4, n = 500)
+# ci = confint(fd, type = "confidence", level = )
+# temp = fd[['eval']] %>%
+#   gather(variable, x)
+# ci = cbind(ci, x = as.numeric(temp$x))
+slope_df = do.call("rbind", model_slopes)
+
+
+# visualize 95% CI slopes
+# ci %>%
+#   filter(term != "s(ARU)") %>%
+#   ggplot(aes(x = x, y = est, group = term)) +
+#   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3) +
+#   geom_line() +
+#   facet_wrap(~term)
+
+# summarize slope trends
+slope_cis = slope_df %>%
+  select(-smooth) %>%
+  group_by(index, var) %>%
+  # taking the median of the 95% CI may not be right, instead take to CI of the upper and lower?
+  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE)))
+
+# simple 95% CI error plot of summary
+# group by ARU here
+ggplot(slope_cis, aes(x = index, y = derivative)) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.1, size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  coord_flip() +
+  facet_wrap(~var) +
+  theme_bw()
+
+# more complex color coded by x-value
+# could code by LULC or ARU too
+slope_df %>%
+  ggplot(aes(x = index, y = derivative)) +
+  geom_point(aes(colour = data), size = 2, alpha = 0.5) +
+  geom_errorbar(data = slope_cis, aes(x = index, ymin = lower, ymax = upper), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  coord_flip() +
+  facet_wrap(~var) +
+  theme_bw()
+
+
+
+
 #####################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

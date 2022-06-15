@@ -175,3 +175,17 @@ pred_plot = function(data_df, model_fit, index_name, link) {
   #     geom_point() +
   #     facet_wrap(~covariate, scales = 'free_x')
 }
+
+# GAMs
+# first derivative (i.e., partial effects slopes)
+slope_summary = function(model) {
+  # covariates in model
+  vars = data.frame(vars = names(model$sp)) %>%
+    filter(!grepl("ARU", vars, ignore.case = TRUE))
+  
+  # derivatives
+  fd = lapply(vars$vars, function(x) derivatives(model, term = x, partial_match = TRUE))
+  fd = do.call("rbind", fd)
+  
+  return(fd)
+}
