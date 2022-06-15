@@ -101,7 +101,9 @@ corr_plotter = function(df){
 }
 
 # function to normalize data from 0 to 1
-min_max_norm <- function(x, min_x, max_x) {
+min_max_norm <- function(x) {
+  min_x = min(x) - 1e-7
+  max_x = max(x)
   (x - min_x) / (max_x - min_x)
 }
 
@@ -157,8 +159,8 @@ pred_plot = function(data_df, model_fit, index_name, link) {
   vars = gsub("[()]", "", vars)
   
   data_df %>%
-    select(vars, contains(index_name), y_pred) %>%
-    rename(acoustic_index = contains(index_name, ignore.case = FALSE)) %>%
+    select(vars, index_name, y_pred) %>%
+    rename(acoustic_index = index_name) %>%
     gather(covariate, value, -acoustic_index, -y_pred, -ARU) %>%
     ggplot(aes(x = value, y = y_pred)) +
       geom_point(alpha = 0.4) +
