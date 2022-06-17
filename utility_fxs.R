@@ -159,14 +159,14 @@ pred_plot = function(data_df, model_fit, index_name, link) {
   vars = gsub("[()]", "", vars)
   
   data_df %>%
-    select(vars, index_name, y_pred) %>%
+    select(vars, index_name, y_pred, ARU) %>%
     rename(acoustic_index = index_name) %>%
     gather(covariate, value, -acoustic_index, -y_pred, -ARU) %>%
     ggplot(aes(x = value, y = y_pred)) +
       geom_point(alpha = 0.4) +
       geom_point(aes(x = value, y = acoustic_index, colour = ARU), alpha = 0.3) +
       facet_wrap(~covariate) +
-      ggtitle(index_name)
+      ggtitle(paste0(index_name, ": black = predicted values"))
   
   # data_df %>%
   #   select(-site,-wavs) %>%
