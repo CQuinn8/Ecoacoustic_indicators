@@ -32,10 +32,10 @@
 # M: (June17) complete
 # NDSI_A: (June17) complete
 # NDSI_B: (June17) complete
-# R: 
-# rugo: 
-# sfm:
-# zcr_mean:
+# R: (June20) complete
+# rugo: (June20) complete
+# sfm: (June20) complete
+# zcr_mean: (June20) complete
 
 # Outlier notes:
 # 1) rugo/Int: found s2lam018_190506 & s2lam018_190412 with extreme interference (97%) shoulkd be removed. Skipping, electronic signal throughout recording
@@ -87,20 +87,13 @@ abgqi_df = abgqi_df %>%
 
 # sites with static
 # s2lam050_190411, s2lam049_210501 : a lot of static but still has other signal
-static_sites = paste("s2lam018_190517", # found in ACI analysis
-                     "s2lam018_190412", "s2lam018_190506", # found in Rugo analysis
-                     sep = "|")
-
-abgqi_df = abgqi_df[!grepl(static_sites, abgqi_df$site),] # 1 site still in list - the site with highest %Interfernce 
-
-# Clean sites with anamolous values
-# 1. Sites with any value == 1
-# only one site with any value == 1 (quiet)
-mod_df = abgqi_df %>%
-  filter(Quiet < 1)
+error_sites = read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites = paste0(error_sites$SiteID, collapse = '|')
+abgqi_df_no_error = abgqi_df[!grepl(error_sites, abgqi_df$site),] # 7 sites dropped after filter above
 
 # Number of minutes in model data
-sum(mod_df$wavs) #728766
+mod_df = abgqi_df_no_error
+sum(mod_df$wavs) #726801
 
 
 # visualize recordings against acoustic measures
@@ -122,6 +115,7 @@ mod_df = mod_df %>%
 
 # list to store model slopes
 model_slopes = list()
+final_models = list()
 
 ###########################################
 ################# NDSI ####################
@@ -171,7 +165,7 @@ gam.check(mod1) # looks good
 #concurvity(mod1, full = F)
 draw(mod1, scales = 'fixed')
 
-# drop geophony (p = 0.998)
+# drop geophony (p = 0.927)
 mod2 = gam(beta_NDSI ~ 
              ARU +
              logwavs +
@@ -186,7 +180,7 @@ summary(mod2)
 gam.check(mod2)
 AIC(mod1, mod2)
 
-# drop logwavs (p = 0.181)
+# drop logwavs (p = 0.170)
 mod3 = gam(beta_NDSI ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -212,9 +206,10 @@ gam.vcomp(mod3)
 # summarized slopes
 ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 # visualize predictions vs observed
-pred_plot(data_df = temp_df, model_fit = mod4, index_name = "beta_NDSI")
+pred_plot(data_df = temp_df, model_fit = mod3, index_name = "beta_NDSI")
 
 ###########################################
 ################# ACI #####################
@@ -243,7 +238,7 @@ ggplot(temp_df, aes(x = ACI_0, fill = ARU)) +
   geom_histogram()
 
 # Extreme ACI values (high):
-# 528 (s2lam050_190411)
+# s2lam050_190411
 
 # fit a gamma model based on positive real 
 mod1 = gam(ACI_0 ~ 
@@ -262,7 +257,7 @@ par(mfrow = c(2, 2))
 gam.check(mod1) # heavy tail in QQ - primarily de to one observation
 
 resids = data.frame(mod1$residuals) # most extreme obs is the only ACI = 0 
-temp_df = temp_df[-381,]
+temp_df_remod = temp_df[-381,]
 
 # remodel without extreme outlier
 remod1 = gam(ACI_0 ~ 
@@ -273,7 +268,7 @@ remod1 = gam(ACI_0 ~
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(remod1)
@@ -281,7 +276,7 @@ par(mfrow = c(2, 2))
 gam.check(remod1, rep = 500) # good diagnostics now
 AIC(mod1, remod1)
 
-# remove logwavs (p = 0.6685)
+# remove logwavs (p = 0.668350)
 mod2 = gam(ACI_0 ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -289,21 +284,21 @@ mod2 = gam(ACI_0 ~
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(mod2)
 gam.check(mod2, rep = 500)
 AIC(remod1, mod2)
 
-# remove Quiet (p = 0.16)
+# remove Quiet (p = 0.223)
 mod3 = gam(ACI_0 ~ 
              ARU +
              s(Anthropophony, k = 5) + 
              s(Biophony, k = 5) + 
              s(Geophony, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(mod3)
@@ -317,6 +312,7 @@ appraise(mod3, method = "simulate")
 # summarized slopes
 ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 # visualize predictions vs observed
 pred_plot(data_df = temp_df, model_fit = mod3, index_name = "ACI_0")
@@ -374,13 +370,12 @@ mod2 = gam(ADInorm ~
            family = betar(),
            method = 'ML')
 summary(mod2)
-gam.check(mod2, rep = 500, ) # some odd fit issues in QQ and resids - gaussian appears better option
+gam.check(mod2, rep = 500, ) # some odd fit issues in QQ and resids
 
 # check on the extreme residuals
 resids = data.frame(residuals.gam(mod2))
 plot(x = temp_df$ADInorm, y = resids$mod2.residuals)
-
-temp_df = temp_df[-c(1033),] # lowest ADInorm value
+temp_df_remod = temp_df[-c(1030),] # lowest ADInorm value
 
 # remodel without extreme outlier
 remod2 = gam(ADInorm ~ 
@@ -391,14 +386,14 @@ remod2 = gam(ADInorm ~
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = betar(),
            method = 'ML')
 summary(remod2)
 gam.check(remod2, rep = 500) # some odd fit issues in resids plot but are still roughly normal. Two low QQ tail deviations
 
 
-# remove logwavs (p = 0.879)
+# remove logwavs (p = 0.859)
 mod3 = gam(ADInorm ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -406,18 +401,19 @@ mod3 = gam(ADInorm ~
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = betar(),
            method = 'ML')
 summary(mod3)
 AIC(mod2, mod3)
-gam.check(mod3, rep = 500) # get more deviation in QQ tails now
+gam.check(mod3, rep = 500)
 
 draw(mod3, scales = "fixed")
 
 # summarized slopes
 ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 # visualize predictions vs observed
 pred_plot(data_df = temp_df, model_fit = mod3, index_name = "ADInorm")
@@ -462,7 +458,7 @@ summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # model overall appears okay aside from possible heteroskadasticity, lower QQ tail heavy
 
-# remove logwavs
+# remove logwavs (p = 0.897)
 mod2 = gam(AEI ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -482,6 +478,7 @@ draw(mod2, scales = "fixed")
 # summarized slopes
 ci = slope_summary(mod2)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod2
 
 ###########################################
 ################# BI ######################
@@ -519,12 +516,12 @@ mod1 = gam(BI ~
            method = 'ML')
 summary(mod1)
 par(mfrow = c(2, 2)) 
-gam.check(mod1) # diagnostics look good - stick with Gamma(log)
+gam.check(mod1) # diagnostics look okay - stick with Gamma(log)
 
-# remove logwavs (p = 0.474)
+# remove anthro (p = 0.517)
 mod2 = gam(BI ~ 
              ARU +
-             s(Anthropophony, k = 5) + 
+             logwavs +
              s(Biophony, k = 5) + 
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
@@ -535,7 +532,7 @@ mod2 = gam(BI ~
 summary(mod2)
 gam.check(mod2) # Looks like gaussian is more appropriate
 
-# remove anthro (p = 0.498)
+# remove logwqavs (p = 0.524)
 mod3 = gam(BI ~ 
              ARU +
              s(Biophony, k = 5) + 
@@ -546,8 +543,8 @@ mod3 = gam(BI ~
            family = Gamma(link = "log"),
            method = 'ML')
 summary(mod3)
-AIC(mod1, mod3) # mod3 preferred 
-gam.check(mod3) # increase functions for quiet
+AIC(mod2, mod3) # mod3 preferred 
+gam.check(mod3)
 
 draw(mod3, scales = "fixed")
 
@@ -559,6 +556,7 @@ pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
 # summarized slopes
 ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 # visualize predictions vs observed
 pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
@@ -603,7 +601,7 @@ summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # QQ plot has lower tail deviation, resids decrease in var but are normal overall
 
-# remove logwavs (p = 0.913)
+# remove logwavs (p = 0.859)
 mod2 = gam(H ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -622,7 +620,7 @@ AIC(mod1, mod2)
 # summarized slopes
 ci = slope_summary(mod2)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
-
+final_models[[i]] = mod2
 
 pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 
@@ -669,7 +667,7 @@ par(mfrow = c(2, 2))
 gam.check(mod1) # QQ plot has lower tail issues but otherwise good
 
 
-# drop logwavs (p=0.846)
+# drop logwavs (p=0.866)
 mod2 = gam(Hs ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -689,6 +687,7 @@ pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 # summarized slopes
 ci = slope_summary(mod2)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod2
 
 # clean up models
 rm(mod1); rm(mod2); rm(mod3); rm(mod4); rm(mod5);rm(remod1);rm(remod2)
@@ -730,9 +729,9 @@ mod1 = gam(Ht ~
            method = 'ML')
 summary(mod1)
 par(mfrow = c(2, 2))
-gam.check(mod1) # all looks good - maybe pronounced residual shoulders
+gam.check(mod1) # good diags - maybe pronounced residual shoulders too
 
-# drop logwavs (p = 0.357)
+# drop logwavs (p = 0.332)
 mod2 = gam(Ht ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -749,11 +748,12 @@ AIC(mod1, mod2)
 
 
 # Model 2
-pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
+pred_plot(data_df = temp_df_remod, model_fit = mod2, index_name = i)
 
 # summarized slopes
 ci = slope_summary(mod2)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod2
 
 rm(mod1); rm(mod2)
 
@@ -784,6 +784,8 @@ summary(temp_df$M)
 temp_df$normM = min_max_norm(temp_df$M)
 temp_df$logM = log(temp_df$M)
 ggplot(temp_df, aes(x = normM, fill = ARU)) +
+  geom_histogram()
+ggplot(temp_df, aes(x = logM, fill = ARU)) +
   geom_histogram()
 
 # fit a model
@@ -836,30 +838,9 @@ remod2 = gam(normM ~
              method = 'ML')
 summary(remod2)
 par(mfrow = c(2, 2))
-gam.check(remod2) # looks like gamma family is the way to go - Q plot tails are brought down with gamma
+gam.check(remod2) # still some issues in diags
 
-# check on the extreme residuals
-resids = data.frame(residuals.gam(remod2))
-plot(resids$residuals.gam.remod2.)
-temp_df_remod = temp_df_remod[-807,] # second highest norm M value
-
-# model without 2 largest outliers
-remod2 = gam(normM ~ 
-               ARU +
-               logwavs +
-               s(Anthropophony, k = 5) + 
-               s(Biophony, k = 5) + 
-               s(Geophony, k = 5) + 
-               s(Quiet, k = 5) + 
-               s(Interference, k = 5),
-             data = temp_df_remod,
-             family = betar(),
-             method = 'ML')
-summary(remod2)
-par(mfrow = c(2, 2))
-gam.check(remod2) # diagnostics are better but still seem wrong
-
-# try gaussian with log(M) wiht all data
+# try gaussian with log(M) with all data
 mod3 = gam(logM ~ 
              ARU +
              logwavs +
@@ -874,7 +855,8 @@ mod3 = gam(logM ~
 summary(mod3)
 gam.check(mod3) # best diags and look okay overall
 
-# remove logwavs (p = 0.76)
+
+# remove logwavs (p = 0.748)
 mod4 = gam(logM ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -882,32 +864,34 @@ mod4 = gam(logM ~
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = gaussian,
            method = 'ML')
 summary(mod4)
 gam.check(mod4)
 
-# remove quiet (p = 0.985)
+# remove quiet (p = 0.113)
 mod5 = gam(logM ~ 
              ARU +
              s(Anthropophony, k = 5) + 
              s(Biophony, k = 5) + 
              s(Geophony, k = 5) + 
              s(Interference, k = 5),
-           data = temp_df,
+           data = temp_df_remod,
            family = gaussian,
            method = 'ML')
 summary(mod5)
 gam.check(mod5)
 
 
-pred_plot(data_df = temp_df, model_fit = mod5, index_name = "logM")
+pred_plot(data_df = temp_df_remod, model_fit = mod5, index_name = "logM")
 
 # summarized slopes
 ci = slope_summary(mod5)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod5
 
+rm(mod1); rm(mod2); rm(mod3); rm(mod4); rm(mod5); rm(remod2);
 ###########################################
 ################# NDSI_A ##################
 i = "NDSI_A"
@@ -946,7 +930,7 @@ summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # good diags
 
-# drop geophony (p = 0.575)
+# drop geophony (p = 0.613)
 mod2 = gam(NDSI_A ~ 
              ARU +
              logwavs +
@@ -960,7 +944,7 @@ mod2 = gam(NDSI_A ~
 summary(mod2)
 gam.check(mod2) # more extreme deviation from QQ
 
-# drop logwavs (p = 0.44)
+# drop logwavs (p = 0.407)
 mod3 = gam(NDSI_A ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -979,6 +963,7 @@ pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
 # summarized slopes
 ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 # clean up models
 rm(mod1); rm(mod2); rm(mod3); 
@@ -1045,7 +1030,7 @@ gam.check(mod2) # better diags with one larger deviance residual
 # check on the extreme residuals
 resids = data.frame(residuals.gam(mod2))
 plot(x = temp_df$normNDSI_B, y = resids$residuals.gam.mod2.)
-temp_df_remod = temp_df[-c(619),] # highest norm value
+temp_df_remod = temp_df[-c(618),] # highest norm value
 
 # remod mod2
 remod2 = gam(normNDSI_B ~ 
@@ -1063,12 +1048,12 @@ summary(remod2)
 par(mfrow = c(2, 2))
 gam.check(remod2) # diags look good
 
-# drop logwavs (p = 0.450)
+# drop logwavs (p = 0.952)
 mod3 = gam(normNDSI_B ~ 
              ARU +
              s(Anthropophony, k = 5) + 
              s(Biophony, k = 5) + 
-             s(Geophony, k = 5) + 
+             s(Geophony, k = 5) +
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
            data = temp_df_remod,
@@ -1076,9 +1061,9 @@ mod3 = gam(normNDSI_B ~
            method = 'ML')
 summary(mod3)
 gam.check(mod3) 
-AIC(remod2, mod3) # Mod3 without geophony suggested
+AIC(remod2, mod3)
 
-# drop geophony (p = 0.186026)
+# drop geophony (p = 0.210322)
 mod4 = gam(normNDSI_B ~ 
              ARU +
              s(Anthropophony, k = 5) + 
@@ -1097,6 +1082,7 @@ pred_plot(data_df = temp_df, model_fit = mod4, index_name = "normNDSI_B")
 # summarized slopes
 ci = slope_summary(mod4)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod4
 
 # clean up models
 rm(mod1); rm(mod2); rm(mod3); rm(mod4); rm(remod2)
@@ -1107,7 +1093,7 @@ i = "R"
 temp_y = data.frame(site = indices_df$site, R = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
   mutate(ARU = factor(ARU),
-         R = min_max_norm(R))
+         logwavs = log(wavs))
 
 # visualize data
 temp_df %>%
@@ -1116,7 +1102,7 @@ temp_df %>%
   ggplot(aes(x = value, y = R, colour = ARU)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "gam") +
-  facet_wrap(~soundType)
+  facet_wrap(~soundType, scales = "free")
 ggplot(temp_df, aes(x = R, fill = ARU)) +
   geom_histogram()
 summary(temp_df$R) # positive continuous
@@ -1129,62 +1115,80 @@ temp_df$logR = log(temp_df$R)
 ggplot(temp_df, aes(x = logR, fill = ARU)) +
   geom_histogram()
 
-# fit a model
+# fit a model for positive continuous values
 mod1 = gam(R ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = gaussian,
-           method = 'REML')
-summary(mod1) # TERRIBLE performance
+           family = Gamma(link = 'log'),
+           method = 'ML')
+summary(mod1) 
 par(mfrow = c(2, 2))
-gam.check(mod1) # Terrible approximation 
+gam.check(mod1) # OKay approximation, some QQ tail deviations
 
-# gamma
-mod2 = gam(R ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
+# try normal with log transform
+
+mod2 = gam(logR ~ 
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = Gamma(link = "log"),
-           method = 'REML')
+           method = 'ML')
 summary(mod2)
-gam.check(mod2) # better diagnostics with extreme tails
+gam.check(mod2) # marginally better diagnostics
 
-# drop biophony (p > 0.05)
-mod3 = gam(R ~ 
-             s(Anthropophony) +
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
+# drop geophony (p = 0.557679)
+mod3 = gam(logR ~ 
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = Gamma(link = "log"),
-           method = 'REML')
-AIC(mod2, mod3) # dropping bio is good
+           method = 'ML')
+AIC(mod2, mod3)
 summary(mod3)
-gam.check(mod3) # better diagnostics
+gam.check(mod3)
+
+# drop logwavs (p = 0.15928)
+mod4 = gam(logR ~ 
+             ARU +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
+           data = temp_df,
+           method = 'ML')
+AIC(mod3, mod4)
+summary(mod4)
+gam.check(mod4)
 
 
-# doesnt work with slope offsets (June 13)
-pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
+pred_plot(data_df = temp_df, model_fit = mod4, index_name = 'logR')
 
 # summarized slopes
-ci = slope_summary(mod3)
+ci = slope_summary(mod4)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod4
 
+rm(mod1); rm(mod2); rm(mod3); rm(mod4);
 ###########################################
 ################# rugo ####################
 i = "rugo"
 temp_y = data.frame(site = indices_df$site, rugo = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
   mutate(ARU = factor(ARU),
-         rugo = min_max_norm(rugo))
+         logwavs = log(wavs))
 
 # visualize data
 temp_df %>%
@@ -1193,7 +1197,7 @@ temp_df %>%
   ggplot(aes(x = value, y = rugo, colour = ARU)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "gam") +
-  facet_wrap(~soundType)
+  facet_wrap(~soundType, scales = 'free')
 ggplot(temp_df, aes(x = rugo, fill = ARU)) +
   geom_histogram()
 summary(temp_df$rugo) # positive continuous
@@ -1201,54 +1205,67 @@ summary(temp_df$rugo) # positive continuous
 # No longer two extremely high values (June13)
 # IDed and removed both (s2lam018_190506) and (s2lam018_190412) both very high interference
 
-# fit a basic model
+# fit a model with beta (positive [0,1])
 mod1 = gam(rugo ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = gaussian,
-           method = 'REML')
+           family = betar(),
+           method = 'ML')
 summary(mod1) 
 par(mfrow = c(2, 2))
-gam.check(mod1) # irregular upward concavity tails in QQ and residuals plots
+gam.check(mod1) # decent fit with a possible outlier
 
 
-# fit a Gamma structure model
+# check on the extreme residuals
+resids = data.frame(residuals.gam(mod1))
+plot(x = temp_df$rugo, y = resids$residuals.gam.mod1.)
+temp_df_remod = temp_df[-c(995),] # no systematic reason for higher residual
+
+# refit model1
+remod1 = gam(rugo ~ 
+               ARU +
+               logwavs +
+               s(Anthropophony, k = 5) + 
+               s(Biophony, k = 5) + 
+               s(Geophony, k = 5) + 
+               s(Quiet, k = 5) + 
+               s(Interference, k = 5),
+             data = temp_df_remod,
+             family = betar(),
+             method = 'ML')
+summary(remod1) 
+par(mfrow = c(2, 2))
+gam.check(remod1) # structure is improved by dropping the outlier
+
+# drop logwavs (p = 0.0589)
 mod2 = gam(rugo ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
-           data = temp_df,
-           family = Gamma(link = "log"),
-           method = 'REML')
+             ARU +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
+           data = temp_df_remod,
+           family = betar(),
+           method = 'ML')
 summary(mod2) 
-gam.check(mod2) # better error structure in QQ wiht a few tail issues and variance in residuals.
+AIC(remod1, mod2)
+gam.check(mod2)
 
-# Gamma + Random effects
-mod3 = gam(rugo ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
-           data = temp_df,
-           family = Gamma(link = "log"),
-           method = 'REML')
-summary(mod3)
-gam.check(mod3) # alright diagnostics. Upper QQ is now pulled upward though. Probably the points in the response ~ fitted that deviates from 1:1
-AIC(mod2, mod3) # Random effect recommended
-
-pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
+pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 
 # summarized slopes
-ci = slope_summary(mod3)
+ci = slope_summary(mod2)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod2
+
+rm(mod1); rm(mod2); rm(remod1);
 
 ###########################################
 ################# sfm #####################
@@ -1256,7 +1273,7 @@ i = "sfm"
 temp_y = data.frame(site = indices_df$site, sfm = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
   mutate(ARU = factor(ARU),
-         sfm = min_max_norm(sfm))
+         logwavs = log(wavs))
 
 # visualize data - definitely different y-intercepts for ARU
 temp_df %>%
@@ -1265,74 +1282,86 @@ temp_df %>%
   ggplot(aes(x = value, y = sfm, colour = ARU)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "gam") +
-  facet_wrap(~soundType)
-# approximately normal with different mean/sd 
+  facet_wrap(~soundType, scales = "free")
+
+# approximately normal 0-1 bound or postive continuous
 ggplot(temp_df, aes(x = sfm, fill = ARU)) +
   geom_histogram()
-summary(temp_df$sfm) # positive continuous
+summary(temp_df$sfm)
 
 # No extreme values
 
-# fit a basic model
+# fit a model for positive continuous values
 mod1 = gam(sfm ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = gaussian,
-           method = 'REML')
+           family = Gamma(link = "log"),
+           method = 'ML')
 summary(mod1) 
 par(mfrow = c(2, 2))
-gam.check(mod1)
+gam.check(mod1) # diagnostics are okay, a couple of possible outliers in QQ
 
-# Add in Random effect first
+# check on the extreme residuals
+resids = data.frame(residuals.gam(mod1))
+plot(x = temp_df$sfm, y = resids$residuals.gam.mod1.)
+temp_df_remod = temp_df[-c(1085),] # lowest value
+
+# refit without outlier
+remod1 = gam(sfm ~ 
+               ARU +
+               logwavs +
+               s(Anthropophony, k = 5) + 
+               s(Biophony, k = 5) + 
+               s(Geophony, k = 5) + 
+               s(Quiet, k = 5) + 
+               s(Interference, k = 5),
+             data = temp_df_remod,
+             family = Gamma(link = "log"),
+             method = 'ML')
+summary(remod1) 
+par(mfrow = c(2, 2))
+gam.check(remod1) # better diagnostics with smaller tail in QQ
+
+# drop logwavs (p = 0.458)
 mod2 = gam(sfm ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
-           data = temp_df,
-           family = gaussian,
-           method = 'REML')
-gam.check(mod2) # QQ plots is okay, residuals has obvious ARU pattern and decreasing variance for AM
-summary(mod2)
+               ARU +
+               s(Anthropophony, k = 5) + 
+               s(Biophony, k = 5) + 
+               s(Geophony, k = 5) + 
+               s(Quiet, k = 5) + 
+               s(Interference, k = 5),
+             data = temp_df_remod,
+             family = Gamma(link = "log"),
+             method = 'ML')
+summary(mod2) 
+gam.check(mod2)
 
-# Rm Anthro (largest p > 0.05)
+# drop geophony (p = 0.11718)
 mod3 = gam(sfm ~ 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
-           data = temp_df,
-           family = gaussian,
-           method = 'REML')
-gam.check(mod3) # same diagnositc issue as mod2
-summary(mod3)
-AIC(mod2, mod3) # not delta3
+             ARU +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
+           data = temp_df_remod,
+           family = Gamma(link = "log"),
+           method = 'ML')
+summary(mod3) 
+gam.check(mod3)
 
-# Rm Bio (largest p > 0.05)
-mod4 = gam(sfm ~ 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
-           data = temp_df,
-           family = gaussian,
-           method = 'REML')
-gam.check(mod4) # same diagnositc issue as mod2
-summary(mod4)
-AIC(mod2, mod4) #deltaAIC < 3 and mod4 is more parsimonious
 
-pred_plot(data_df = temp_df, model_fit = mod4, index_name = i)
+pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
 
 # summarized slopes
-ci = slope_summary(mod4)
+ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
+final_models[[i]] = mod3
 
 ###########################################
 ################# zcr_mean ################
@@ -1340,7 +1369,7 @@ i = "zcr_mean"
 temp_y = data.frame(site = indices_df$site, zcr_mean = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) %>% 
   mutate(ARU = factor(ARU),
-         zcr_mean = min_max_norm(zcr_mean))
+         logwavs = log(wavs))
 
 # visualize data - definitely different y-intercepts for ARU
 temp_df %>%
@@ -1349,51 +1378,94 @@ temp_df %>%
   ggplot(aes(x = value, y = zcr_mean, colour = ARU)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "gam") +
-  facet_wrap(~soundType)
+  facet_wrap(~soundType, scales = "free")
 ggplot(temp_df, aes(x = zcr_mean, fill = ARU)) +
   geom_histogram()
-summary(temp_df$zcr_mean) # positive continuous
+summary(temp_df$zcr_mean) # positive continuous or [0-1]
+
+temp_df$normZCR = min_max_norm(temp_df$zcr_mean)
 
 # No extreme values
 
-# fit a basic model
+# fit a postive model
 mod1 = gam(zcr_mean ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference),
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = gaussian,
-           method = 'REML')
+           family = Gamma(link = 'log'),
+           method = 'ML')
 summary(mod1) 
 par(mfrow = c(2, 2))
-gam.check(mod1) # good diagnostics - try ARU RE
+gam.check(mod1) # okay diagnostics - try betar
 
-# Add in Random effect first
-mod2 = gam(zcr_mean ~ 
-             s(Anthropophony) + 
-             s(Biophony) + 
-             s(Geophony) + 
-             s(Quiet) + 
-             s(Interference) +
-             s(ARU, bs = "re", k = 2),
+# beta
+mod2 = gam(normZCR ~ 
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
            data = temp_df,
-           family = gaussian,
-           method = 'REML')
-gam.check(mod2) # QQ plot deviates a bit more than without RE but model is highly recommended over no RE
-summary(mod2)
-AIC(mod1, mod2) 
+           family = betar(),
+           method = 'ML')
+summary(mod2) 
+gam.check(mod2) # had to tell if diags are better - one extreme value
 
-draw(mod2, scales = "fixed")
-pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
+# check on the extreme residuals
+resids = data.frame(residuals.gam(mod2))
+plot(x = temp_df$normZCR, y = resids$residuals.gam.mod2.)
+temp_df_remod = temp_df[-c(726),] # highest norm value
+
+# refit mod2
+remod2 = gam(normZCR ~ 
+             ARU +
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) + 
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
+           data = temp_df_remod,
+           family = betar(),
+           method = 'ML')
+summary(remod2) 
+par(mfrow = c(2, 2))
+gam.check(remod2) # better assumption and marginally better diags with beta
+
+# drop logwavs (p = 0.387)
+mod3 = gam(normZCR ~ 
+               ARU +
+               s(Anthropophony, k = 5) + 
+               s(Biophony, k = 5) + 
+               s(Geophony, k = 5) + 
+               s(Quiet, k = 5) + 
+               s(Interference, k = 5),
+             data = temp_df_remod,
+             family = betar(),
+             method = 'ML')
+summary(mod3) 
+gam.check(mod3)
+
+
+draw(mod3, scales = "fixed")
+pred_plot(data_df = temp_df, model_fit = mod3, index_name = "normZCR")
 
 # summarized slopes
-ci = slope_summary(mod2)
+ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
-
+final_models[[i]] = mod3
 
 ###########################################
+######### SAVE OBJECTS ####################
+saveRDS(final_models, file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_objects_20June2022.RData'))
+
 ######### Visualize effects ###############
 
 # calculate all slope values
@@ -1467,7 +1539,27 @@ annotate_figure(allplots, top = text_grob("95% CI for first derivative (slopes) 
 Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
                 bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
                                    size = 10))          
-          
+       
+
+temp_min = floor(min(slope_cis$lower))
+temp_max = ceiling(max(slope_cis$upper))
+slope_cis %>%
+  ggplot(aes(x = var, y = derivative)) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 1) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+    ylim(c(temp_min, temp_max)) + # min max in slope df
+    ylab("Slope") +
+    xlab("Acoustic Index") +
+    coord_flip() +
+    facet_wrap(~index) +
+    theme_bw()
+
+
+
+
+
+
+   
 # ggexport(bxp, dp, lp, bxp, filename = "test.pdf",
 #          nrow = 2, ncol = 1)
 
