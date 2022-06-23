@@ -1465,97 +1465,9 @@ final_models[[i]] = mod3
 ###########################################
 ######### SAVE OBJECTS ####################
 saveRDS(final_models, file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_objects_20June2022.RData'))
+saveRDS(model_slopes, file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_slopes_20June2022.RData'))
 
 ######### Visualize effects ###############
-
-# calculate all slope values
-slope_df = do.call("rbind", model_slopes)
-
-# use middle 99% of x values to plot slopes to avoid extreme tail behavior
-abgqi_limits = temp_df %>%
-  select(Anthropophony, Biophony, Geophony, Quiet, Interference) %>%
-  gather(variable, value) %>%
-  group_by(variable) %>%
-  summarise(lower = quantile(value, 0.005),
-            upper = quantile(value, 0.995))
-
-# filter slope df based on percentile values
-slope_df_filtered = slope_df %>%
-  filter(case_when(var == 'Anthropophony' ~ data >= abgqi_limits$lower[1] & data <= abgqi_limits$upper[1],
-                   var == 'Biophony'      ~ data >= abgqi_limits$lower[2] & data <= abgqi_limits$upper[2],
-                   var == 'Geophony'      ~ data >= abgqi_limits$lower[3] & data <= abgqi_limits$upper[3],
-                   var == 'Interference'  ~ data >= abgqi_limits$lower[4] & data <= abgqi_limits$upper[4],
-                   var == 'Quiet'         ~ data >= abgqi_limits$lower[5] & data <= abgqi_limits$upper[5]))
-slope_df_filtered %>%
-  group_by(var) %>%
-  summarise(min = min(data, na.rm = TRUE),
-            max = max(data, na.rm = TRUE))
-
-# summarize slope trends
-slope_cis = slope_df_filtered %>%
-  select(-smooth) %>%
-  group_by(index, var) %>%
-  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))) %>%
-  mutate(index = factor(index))
-
-# summarize slope trends using CI of mean
-# slope_cis = slope_df %>%
-#   select(-smooth, -se, -crit, -lower, -upper) %>%
-#   group_by(index, var) %>%
-#   summarise(lower025 = quantile(derivative, 0.025),
-#             upper975 = quantile(derivative, 0.975),
-#             median = quantile(derivative, 0.50)) %>%
-#   mutate(index = factor(index))
-
-# simple 95% CI error plot of summary
-avg_slope_error_plot = function(slope_avg_df, temp_index) {
-  temp_min = floor(min(slope_avg_df$lower))
-  temp_max = ceiling(max(slope_avg_df$upper))
-  gg = slope_avg_df %>%
-    group_by(var) %>%
-    filter(var == temp_index) %>%
-    #mutate(index = fct_reorder(index, derivative)) %>%
-    ggplot(aes(x = index, y = derivative)) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 1) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-    ylim(c(temp_min, temp_max)) + # min max in slope df
-    ylab("Slope") +
-    xlab("Acoustic Index") +
-    coord_flip() +
-    facet_wrap(~var) +
-    theme_bw()
-  return(gg)
-}
-
-ggAnthro = avg_slope_error_plot(slope_cis, 'Anthropophony')
-ggBio = avg_slope_error_plot(slope_cis, 'Biophony')
-ggGeo = avg_slope_error_plot(slope_cis, 'Geophony')
-ggQuiet = avg_slope_error_plot(slope_cis, 'Quiet')
-ggInt = avg_slope_error_plot(slope_cis, 'Interference')
-allplots = ggarrange(ggAnthro, ggBio, ggGeo, ggQuiet, ggInt, 
-          ncol = 3, nrow = 2,
-          labels = c("A", "B", "C", "D", "E"))
-annotate_figure(allplots, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
-Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
-                bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
-                                   size = 10))          
-       
-
-temp_min = floor(min(slope_cis$lower))
-temp_max = ceiling(max(slope_cis$upper))
-slope_cis %>%
-  ggplot(aes(x = var, y = derivative)) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 1) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-    ylim(c(temp_min, temp_max)) + # min max in slope df
-    ylab("Slope") +
-    xlab("Acoustic Index") +
-    coord_flip() +
-    facet_wrap(~index) +
-    theme_bw()
-
-
-
 
 
 
