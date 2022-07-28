@@ -11,8 +11,12 @@ source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper
 
 # Todo:
 # 1. rename indices to paper format
-
+# 2. Look at partial effects to see if, for example, rate of change is high for low values of a covariate 
+#     so the index is sensitive to ANY presence vs a more steady/linear relationship. E.g. if the curve 
+#     is logarithmic any presence of the sound is impactful vs if it is exponential there needs to be a 
+#     good amount of the signal to affect the index.
 wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/'
+indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
 
 # read in abgqi data
 abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
@@ -55,9 +59,30 @@ model_slopes = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_obj
 length(unique(mod_df$site)) # sites used in analyses
 sum(mod_df$wavs)            # number of recordings in analyses
 
+# count number of sites per year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  group_by(YY) %>%
+  count()
+
+# get number of recordings per year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  group_by(YY) %>%
+  summarise(sum(wavs))
+
 length(unique(abgqi_df$site)) # total sites pre-analysis
 sum(abgqi_df$wavs)            # total wavs pre-analysis
 
+# get mean and sd ABGQ after removing Int
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE)
+)
+mod_df %>%
+  select(Anthropophony, Biophony, Geophony, Quiet) %>%
+  dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
+  round(6) * 100
 
 ######################################
 # Visualize slope objects
@@ -108,7 +133,7 @@ avg_slope_error_plot = function(slope_avg_df, temp_index) {
   gg = slope_avg_df %>%
     group_by(var) %>%
     filter(var == temp_index) %>%
-    #mutate(index = fct_reorder(index, derivative)) %>%
+    mutate(index = fct_reorder(index, derivative)) %>%
     ggplot(aes(x = index, y = derivative)) +
     geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 1) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
@@ -206,13 +231,15 @@ R1 %>%
 
 ######################################
 # Visualize partial effects + interpretation
+# y-axis is the centered smooth
 draw(model_objects$zcr_mean, scales = "fixed")
 # most affected by anthro, negatively
 # Bio has small effect mostly at lower values too
 # Geophony and int are negatively related
 # Quiet is mixed
 
-draw(model_objects$ACI, scales = "fixed")
+draw(model_objects$ACI, scales = "fixed", residuals = TRUE)
+model_objects$ACI
 # most affected by interference esp lower values - makes sense as these are staccato 
 # Biophony has a positively linear relationship
 # Geophony also is positive (slightly more than Bio)
@@ -238,6 +265,7 @@ draw(model_objects$rugo, scales = "fixed")
 draw(model_objects$NDSI_B, scales = "fixed")
 
 draw(model_objects$NDSI, scales = "fixed")
+model_objects$NDSI
 # weakly impacted by interference (positive)
 # negative Anthro
 # Strong positive effect from Bio and lessser so Quiet
@@ -245,6 +273,8 @@ draw(model_objects$NDSI, scales = "fixed")
 draw(model_objects$ADI, scales = "fixed")
 
 draw(model_objects$sfm, scales = "fixed")
+model_objects$sfm
+summary(indices_df$sfm)
 
 draw(model_objects$BI, scales = "fixed")
 

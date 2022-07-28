@@ -173,6 +173,16 @@ mod_df = mod_df %>%
 
 sum(mod_df$wavs_sans_int)
 
+# get mean and sd ABGQ after removing Int
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE)
+)
+mod_df %>%
+  select(Anthropophony, Biophony, Geophony, Quiet) %>%
+  dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
+  round(6)
+
 ###########################################
 ################# ACI #####################
 i = "ACI"
@@ -260,9 +270,16 @@ AIC(mod2, mod3) # Quiet suggested to stay in
 gam.check(mod3, rep = 500)
 
 
-draw(mod2, scales = "fixed")
+# visualize partial effects
+draw(mod2, scales = "fixed", residuals = TRUE)
 appraise(mod2, method = "simulate")
+summary(mod2)
 
+
+aci_with_int = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_objects_20June2022.RData'))$ACI
+draw(aci_with_int, scales = "fixed")
+summary(aci_with_int)
+##### Generate Slope figure 
 # summarized slopes
 ci = slope_summary(mod2)
 model_slopes = cbind(index = rep(i, times = nrow(ci)), ci)
@@ -283,7 +300,7 @@ slope_df_filtered = model_slopes %>%
   filter(case_when(var == 'Anthropophony' ~ data >= abgqi_limits$lower[1] & data <= abgqi_limits$upper[1],
                    var == 'Biophony'      ~ data >= abgqi_limits$lower[2] & data <= abgqi_limits$upper[2],
                    var == 'Geophony'      ~ data >= abgqi_limits$lower[3] & data <= abgqi_limits$upper[3],
-                   var == 'Quiet'         ~ data >= abgqi_limits$lower[5] & data <= abgqi_limits$upper[5]))
+                   var == 'Quiet'         ~ data >= abgqi_limits$lower[4] & data <= abgqi_limits$upper[4]))
 
 
 # summarize slope trends
@@ -293,20 +310,59 @@ slope_cis = slope_df_filtered %>%
   summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))) %>%
   mutate(index = factor(index))
 
+######
+# Interference model
+model_slopes_int = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_slopes_20June2022.RData'))$ACI
+abgqi_df_int = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+  mutate(ARU = substr(site, 4,5),
+         ARUdevice = substr(site, 4,8)) %>%
+  select(-contains('var')) %>%
+  select(site, wavs, contains('mean'), ARU, -Unidentified_mean) %>%
+  rename(Anthropophony = Anthropophony_mean, Biophony = Biophony_mean, Geophony = Geophony_mean,
+         Quiet = Quiet_mean, Interference = Interference_mean)
 
+# Clean sites that are known problems
+abgqi_df_no_error_int = abgqi_df_int %>%
+  filter(wavs >= (144 * 2.5)) # 44 sites
+mod_df_int = abgqi_df_no_error_int[!grepl(error_sites, abgqi_df_no_error_int$site),]
+
+abgqi_limits_int = mod_df_int %>%
+  select(Anthropophony, Biophony, Geophony, Quiet, Interference) %>%
+  gather(variable, value) %>%
+  group_by(variable) %>%
+  summarise(lower = quantile(value, 0.005),
+            upper = quantile(value, 0.995))
+slope_df_filtered_int = model_slopes_int %>%
+  filter(case_when(var == 'Anthropophony' ~ data >= abgqi_limits_int$lower[1] & data <= abgqi_limits_int$upper[1],
+                   var == 'Biophony'      ~ data >= abgqi_limits_int$lower[2] & data <= abgqi_limits_int$upper[2],
+                   var == 'Geophony'      ~ data >= abgqi_limits_int$lower[3] & data <= abgqi_limits_int$upper[3],
+                   var == 'Interference'  ~ data >= abgqi_limits_int$lower[4] & data <= abgqi_limits_int$upper[4],
+                   var == 'Quiet'         ~ data >= abgqi_limits_int$lower[5] & data <= abgqi_limits_int$upper[5]))
+slope_cis_int = slope_df_filtered_int %>%
+  select(-smooth) %>%
+  group_by(index, var) %>%
+  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))) %>%
+  mutate(index = factor(index))
+
+slope_cis$Int = "no Interference"
+slope_cis_int$Int = "Interference"
+slope_cis = rbind(slope_cis, slope_cis_int)
 
 temp_min = floor(min(slope_cis$lower))
-temp_max = ceiling(max(slope_cis$upper))
+temp_max = ceiling(max(slope_cis_int$upper))
+# Plot int and no-int slope CIs
 (gg = slope_cis %>%
-    mutate(var = factor(var, levels = c('Quiet','Geophony', 'Biophony',"Anthropophony"))) %>%
+    mutate(var = factor(var, levels = c('Interference','Quiet','Geophony', 'Biophony','Anthropophony'))) %>%
     ggplot(aes(x = var, y = derivative)) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 0.5) +
+    geom_errorbar(aes(ymin = lower, ymax = upper, linetype = factor(Int)), 
+                  width = 0.3, size = 0.7, position = position_dodge()) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
     ylim(c(temp_min, temp_max)) + # min max in slope df
     ylab("Slope") +
     xlab("Acoustic Index") +
     coord_flip() +
     facet_wrap(~index) +
+    guides(linetype = guide_legend(title = "GAM variant")) +
     theme_bw())
 
 (gg = annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.

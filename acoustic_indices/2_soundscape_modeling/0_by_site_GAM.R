@@ -17,6 +17,8 @@
 #     - should each group smoother be the same wilggliness?
 #     - will smoothers for each group be similar to one another?
 #         - probably for all indices either G, GS, or I
+# 11) Deviance residuals: https://bookdown.org/ltupper/340f21_notes/deviance-and-residuals.html
+
 
 # MODELING NOTES
 # June 8: inital modeling
@@ -74,6 +76,11 @@ indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_ac
 # indices_df = fread(paste0(wd, 'paired_ARUs/corrected_data/corrected_site_acousticindices_03June2022.csv'))
 # df = merge(indices_df, abgqi_df, by = 'site')
 
+# Year summary
+abgqi_df$YY = substr(abgqi_df$site, 10, 11)
+abgqi_df %>%
+  group_by(YY) %>%
+  summarise(n())
 
 # Total minutes pre-analyses
 sum(abgqi_df$wavs) # 741061
@@ -113,6 +120,12 @@ mod_df = mod_df %>%
          Quiet         = min_max_norm(Quiet),
          Interference  = min_max_norm(Interference))
 
+# save list of sites used in analyses
+# sites = temp_df$site
+# write.csv(data.frame(sites), 
+#           paste0(wd, 'sites_used_in_GAMs_21July22.csv'), 
+#           row.names = F)
+
 # list to store model slopes
 model_slopes = list()
 final_models = list()
@@ -142,11 +155,6 @@ hist(temp_df$beta_NDSI)
 # Outliers
 # Visual inspection and model diagnositcs - no gross outliers that cause alarm
 
-# visualize pairs of corr
-# temp_df %>%
-#   GGally::ggpairs(aes(alpha = 0.05), progress = FALSE)
-
-###### TESTING using: https://www.youtube.com/watch?v=Ukfvd8akfco
 # start with full model under beta distribution
 mod1 = gam(beta_NDSI ~ 
              ARU +
@@ -162,6 +170,7 @@ mod1 = gam(beta_NDSI ~
 summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # looks good
+
 #concurvity(mod1, full = F)
 draw(mod1, scales = 'fixed')
 
@@ -254,7 +263,7 @@ mod1 = gam(ACI_0 ~
            method = 'ML')
 summary(mod1)
 par(mfrow = c(2, 2))
-gam.check(mod1) # heavy tail in QQ - primarily de to one observation
+gam.check(mod1) # heavy tail in QQ - primarily due to one observation
 
 resids = data.frame(mod1$residuals) # most extreme obs is the only ACI = 0 
 temp_df_remod = temp_df[-381,]
