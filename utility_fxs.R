@@ -149,6 +149,7 @@ fromLogit<-function(x){
 }
 
 
+
 # GAM prediction visualization
 pred_plot = function(data_df, model_fit, index_name, link) {
   # predict based on original values

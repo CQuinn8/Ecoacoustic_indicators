@@ -161,7 +161,7 @@ temp_max = ceiling(max(slope_df_filtered$upper))
     mutate(var = factor(var, levels = c('Geophony', 'Anthropophony', 'Interference', 'Quiet'))) %>%
     ggplot(aes(x = var, y = derivative)) +
     geom_boxplot(width = 0.25, outlier.shape = NA) +
-    geom_jitter(width = 0.05, alpha = 0.3) +
+    #geom_jitter(width = 0.05, alpha = 0.3) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
     ylim(c(temp_min, temp_max)) + # min max in slope df
     ylab("Slope") +
@@ -185,8 +185,12 @@ hist(mod_df$Biophony)
 hist(sqrt(mod_df$Biophony))
 
 mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
+mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
+mod_df$logBiophony = log(mod_df$Biophony+1e-7)
+hist(mod_df$logBiophony) # one extreme outlier that will impact model fit [886,]
+mod_df = mod_df[-886,]
 
-modBio1 = gam(sqrtBiophony ~ 
+modBio1 = gam(cuberootBiophony ~ 
                 ARU +
                 logwavs +
                 s(site_richness, k = 5),
@@ -198,10 +202,11 @@ par(mfrow = c(2,2))
 gam.check(modBio1) # some tail behavior in QQ and a right skewed histogram - check on this value
 
 # check on the extreme residuals
-resids = data.frame(residuals.gam(modBio1, type = 'deviance'))
-mod_df_remod = mod_df[-c(639),] # Highest biophony and higher spp rich
+mod_df$resids = data.frame(residuals.gam(modBio1, type = 'deviance'))
+mod_df_remod = mod_df %>% # [-639,] 
+  filter(resids < 8) # high Biophony (>95%) with low spp richness
 
-remodBio1 = gam(sqrtBiophony ~ 
+remodBio1 = gam(cuberootBiophony ~ 
                 ARU +
                 logwavs +
                 s(site_richness, k = 5),
@@ -212,6 +217,26 @@ summary(remodBio1)
 gam.check(remodBio1) # qq plot still showing right skewed data but histogram is better
 
 draw(remodBio1)
+
+# RMSE
+sqrt(mean((mod_df_remod$Biophony - remodBio1$fitted.values^3)^2))
+
+# Visualize model predictions and actual
+# predict based on original values
+mod_df_remod$Biophony_pred = predict(remodBio1, newdata = mod_df_remod, type = "response")^3
+
+mod_df_remod %>%
+  select(site_richness, Biophony, Biophony_pred, ARU) %>%
+  gather(covariate, value, -Biophony, -Biophony_pred, -ARU) %>%
+  ggplot(aes(x = value, y = toLogit(Biophony_pred))) +
+    geom_point(aes(x = value, y = toLogit(Biophony), colour = ARU), alpha = 0.5) +
+    geom_point(alpha = 0.1) +
+    geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
+    ggtitle("Biophony: black = predicted values") +
+    labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
+    theme_bw()
+
+pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
 
 #############################################
 # SPP RICH ~ ACOUSTIC INDEX ANALYSIS
@@ -368,46 +393,25 @@ model_slopes = cbind(index = rep('Bird Spp. Richness', times = nrow(ci)), ci)
 # calculate all slope values
 slope_df = model_slopes
 
-# use middle 99% of x values to plot slopes to avoid extreme tail behavior
-abgqi_limits = mod_df_indices %>%
-  select(-Hs, -rugo, -zcr_mean, -zcr_min, -zcr_max, -ARU, -logwavs) %>%
-  gather(variable, value) %>%
-  group_by(variable) %>%
-  summarise(lower = mean(value) - 3 * sd(value), # set to zero or sd value if >0
-            upper = mean(value) + 3 * sd(value)) # set to 1 or sd value if < 1
-
-# filter slope df based on percentile values
-# slope_df_filtered = slope_df %>%
-#   filter(case_when(var == 'Anthropophony' ~ data >= abgqi_limits$lower[1] & data <= abgqi_limits$upper[1],
-#                    var == 'Biophony'      ~ data >= abgqi_limits$lower[2] & data <= abgqi_limits$upper[2],
-#                    var == 'Geophony'      ~ data >= abgqi_limits$lower[3] & data <= abgqi_limits$upper[3],
-#                    var == 'Interference'  ~ data >= abgqi_limits$lower[4] & data <= abgqi_limits$upper[4],
-#                    var == 'Quiet'         ~ data >= abgqi_limits$lower[5] & data <= abgqi_limits$upper[5]))
-# slope_df_filtered %>%
-#   group_by(var) %>%
-#   summarise(min = min(data, na.rm = TRUE),
-#             max = max(data, na.rm = TRUE))
-
-# summarize slope trends
-slope_cis = slope_df %>%
+# Use middle 95% of data for each index domain to eliminate spurious tail behavior in plots
+slope_df_filtered = slope_df %>%
   select(-smooth) %>%
   group_by(var) %>%
-  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE)))
+  filter(data >= quantile(data, 0.025) & data <= quantile(data, 0.975))
 
-temp_min = floor(min(slope_df$lower))
-temp_max = ceiling(max(slope_df$upper))
-(gg = slope_df %>%
+temp_min = floor(min(slope_df_filtered$lower))
+temp_max = ceiling(max(slope_df_filtered$upper))
+(gg = slope_df_filtered %>%
     group_by(var) %>%
     ggplot(aes(x = var, y = derivative)) +
       geom_boxplot(width = 0.25, outlier.shape = NA) +
-      geom_jitter(width = 0.05, alpha = 0.3) +
       geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
       ylim(c(temp_min, temp_max)) + # min max in slope df
       ylab("Slope") +
       xlab("Acoustic Index") +
       coord_flip() +
       theme_bw())
-annotate_figure(allplots, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
+annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
 Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
                 bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
                                    size = 10)) 
