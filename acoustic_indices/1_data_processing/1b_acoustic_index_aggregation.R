@@ -22,10 +22,15 @@ site_csvs = list.files(paste0(results_dir,"by_site"), full.names = F, pattern = 
 # Remove any of the above error sites
 site_csvs = site_csvs[!site_csvs %in% error_sites]
 
+# dawn chorus
+dawn_chorus = seq(from = 4, to = 11, by = 1)
+
 # instantiate empty lists
 site_avg_list = list()
 by_hour_list = list()
 by_hour_all_list = list()
+dawn_chorus_list = list()
+options(dplyr.summarise.inform = FALSE)
 for(i in 1:length(site_csvs)){
   temp_site = site_csvs[i]
   temp_site_name = strsplit(temp_site, ".csv")[[1]][1]
@@ -92,14 +97,37 @@ for(i in 1:length(site_csvs)){
   # 
   # # store site name and stats
   # site_avg_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_avg))
+  
+  ###### SITE DAWN CHORUS ######
+  if(any(unique(df$hh) %in% dawn_chorus)){
+    temp_dawn_avg = df %>% 
+      select(-wav, -YYYY, -MM, -DD, -mm) %>%
+      filter(hh %in% dawn_chorus) %>%
+      summarise(across(where(is.numeric), mean)) %>%
+      select(-hh)
+    
+    # count n wavs per hour
+    n = df %>%
+      filter(hh %in% dawn_chorus) %>%
+      summarise('n_wavs' = n_distinct(wav))
+    
+    # store site name and stats
+    dawn_chorus_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_dawn_avg, 'wavs' = n$n_wavs))
+    
+  } else {
+    print('Site contains no dawn chorus samples')
+  }
+  
 }
 
 # concat all site avgs
 all_site_avg_df = do.call("rbind", site_avg_list)
 all_site_by_hour_df = do.call("rbind", by_hour_list)
 all_site_by_hour_all_df = do.call("rbind", by_hour_all_list)
+all_site_dawn_chorus_df = do.call("rbind", dawn_chorus_list)
 
 # save csv
 write.csv(all_site_avg_df, file = paste0(results_dir, "/averages/site_avg_acoustic_indices.csv"), row.names = FALSE)
 write.csv(all_site_by_hour_df, file = paste0(results_dir, "/averages/site_by_hour_acoustic_indices.csv"), row.names = FALSE)
 write.csv(all_site_by_hour_all_df, file = paste0(results_dir, "/averages/site_by_hour_all_acoustic_indices.csv"), row.names = FALSE)
+write.csv(all_site_dawn_chorus_df, file = paste0(results_dir, "/averages/site_acoustic_indices_dawn_4am-12pm.csv"), row.names = FALSE)

@@ -31,10 +31,15 @@ mean_var <- list(
   var = ~var(.x, na.rm = TRUE)
 )
 
+# dawn chorus
+dawn_chorus = c('04','05','06','07','08','09','10','11')
+
 # instantiate empty lists
 site_avg_list = list()
 by_hour_list = list()
 by_hour_all_list = list()
+dawn_chorus_list = list()
+options(dplyr.summarise.inform = FALSE)
 for(i in 1:length(site_csvs)){
   temp_site = site_csvs[i]
   temp_site_name = strsplit(temp_site, ".csv")[[1]][1]
@@ -75,7 +80,6 @@ for(i in 1:length(site_csvs)){
   # join count and stats 
   temp_hr_avg_all = merge(x = temp_hr_all, y = n_all, by = c('MM','DD','HH'))
     
-  
   # store site name and stats
   by_hour_all_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_hr_avg_all))
   
@@ -104,6 +108,26 @@ for(i in 1:length(site_csvs)){
   # store site name and stats
   by_hour_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_hr_avg))
 
+  
+  ###### SITE DAWN CHORUS ######
+  if(any(unique(temp_hr$HH) %in% dawn_chorus)){
+    temp_dawn_avg = df %>% 
+      select(-wav, -mfcc, -DD, -MM) %>%
+      filter(HH %in% dawn_chorus) %>%
+      summarise(across(where(is.integer), mean))
+      
+    # count n wavs per hour
+    n = df %>%
+      filter(HH %in% dawn_chorus) %>%
+      summarise('n_wavs' = n_distinct(wav))
+    
+    # store site name and stats
+    dawn_chorus_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_dawn_avg, 'wavs' = n$n_wavs))
+    
+  } else {
+    print('Site contains no dawn chorus samples')
+  }
+  
   ##### SITE AVG #####
   # get column-wise statistics on integer columns only (e.g. binarized)
   temp_avg = df %>%
@@ -120,8 +144,10 @@ for(i in 1:length(site_csvs)){
 all_site_avg_df = do.call("rbind", site_avg_list)
 all_site_by_hour_df = do.call("rbind", by_hour_list)
 all_site_by_hour_all_df = do.call("rbind", by_hour_all_list)
+all_site_dawn_chorus_df = do.call("rbind", dawn_chorus_list)
 
 # save csv
 write.csv(all_site_avg_df, file = paste0(results_dir, "/averages/site_avg_ABGQI.csv"), row.names = FALSE)
 write.csv(all_site_by_hour_df, file = paste0(results_dir, "/averages/site_by_hour_ABGQI.csv"), row.names = FALSE)
 write.csv(all_site_by_hour_all_df, file = paste0(results_dir, "/averages/site_by_hour_all_ABGQI.csv"), row.names = FALSE)
+write.csv(all_site_dawn_chorus_df, file = paste0(results_dir, "/averages/site_ABGQI_dawn_4am-12pm.csv"), row.names = FALSE)

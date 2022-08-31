@@ -3,6 +3,9 @@
 # 2. GAM: SppRichness ~ ABGQI
 # 3. AcInd: SppRichness ~ [indices]
 
+# ToDo:
+#   - Determine if Bio should be inclded in Bird ~ ABGQI model and what that means
+
 # data libs
 library(data.table)
 library(dplyr)
@@ -16,13 +19,16 @@ library(mgcv)
 library(gratia)
 source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
 
-wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/'
+wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
 
 # bird species pres/abs by site
 bird_df = fread('G:/Shared drives/NASA  S2L/Paper Development/Sonoma SDM update/bird_cnn_predictions/sonoma_s2l_predictions_ROImaxF05_220707_summarized.csv')
 
 # reduce sites used in ABGQI analyses
 sites = fread("//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/sites_used_in_GAMs_21July22.csv")
+
+# LULC table
+lulc_df = fread(paste0(wd,'data/sonoma_s2l_locations_landcover_220113.csv'))
 
 # subsetting robust ABGQI sites results in 1221 -> 1182 sites
 bird_df = bird_df[bird_df$site %in% sites$sites, ]
@@ -47,14 +53,14 @@ site_spp_rich %>%
 
 
 # read in ABGQI and Acoustic Indices
-abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+abgqi_df = fread(paste0(wd, 'results/ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
   select(site, wavs, contains('mean'), ARU, -Unidentified_mean) %>%
   rename(Anthropophony = Anthropophony_mean, Biophony = Biophony_mean, Geophony = Geophony_mean,
          Quiet = Quiet_mean, Interference = Interference_mean)
-indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
+indices_df = fread(paste0(wd, 'results/acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
 
 
 # Clean sites that are known problems
@@ -74,6 +80,139 @@ abgqi_df_no_error = abgqi_df[!grepl(error_sites, abgqi_df$site),] # 7 sites drop
 mod_df = abgqi_df_no_error
 sum(mod_df$wavs) #726801
 
+mod_df = merge(site_spp_rich, mod_df, by = 'site')
+
+mean(mod_df$site_richness)
+sd(mod_df$site_richness)
+
+# Subset LULC to target sites and determine Max LULC ID
+lulc_df = lulc_df[lulc_df$SiteID %in% mod_df$site,] %>%       # 1195 (13 non-unique duplicates)
+  distinct(SiteID, .keep_all = TRUE) %>%                      # select dinstinct rows 1182 sites
+  select(SiteID, 'Oak-Hardwood Forest', Grassland, Shrubland, # select the LULC cols and SiteID
+         Riparian, 'Conifer Forest', 'Agriculture-Barren',
+         Wetland, Urban) %>% # TODO: V19
+  gather(LULC, pct, -SiteID) %>%                              # gather DF into LULC, PCT, and SiteName
+  group_by(SiteID) %>%                                        # for each Site
+  slice(which.max(pct)) %>%                                   # select top LULC
+  select(-pct)
+
+# Combine ABGQ, Rich, LULC
+mod_df = lulc_df %>%
+  inner_join(mod_df, by = c("SiteID" = 'site')) %>%
+  ungroup() %>%
+  mutate(ARU = factor(ARU),
+         logwavs = log(wavs)) %>%
+  select(-SiteID)
+
+#############################################
+# BIOPHONY ~ SPP RICH 
+# visualize data
+mod_df %>%
+  select(Biophony, site_richness, ARU) %>%
+  ggplot(aes(y = Biophony, x = site_richness, colour = ARU)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = "gam")
+hist(mod_df$Biophony)
+hist(sqrt(mod_df$Biophony))
+
+mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
+mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
+mod_df$logBiophony = log(mod_df$Biophony+1e-7)
+hist(mod_df$logBiophony) # one extreme outlier that will impact model fit [886,]
+mod_df = mod_df[-886,]
+
+modBio1 = gam(cuberootBiophony ~ 
+                ARU +
+                logwavs +
+                s(site_richness, k = 5),
+              data = mod_df,
+              family = betar(),
+              method = 'ML')
+summary(modBio1)
+par(mfrow = c(2,2))
+gam.check(modBio1) # some tail behavior in QQ and a right skewed histogram - check on this value
+
+# check on the extreme residuals
+mod_df$resids = data.frame(residuals.gam(modBio1, type = 'deviance'))
+mod_df_remod = mod_df %>% # [-639,] 
+  filter(resids < 8) # high Biophony (>95%) with low spp richness
+
+remodBio1 = gam(cuberootBiophony ~ 
+                  ARU +
+                  logwavs +
+                  s(site_richness, k = 5),
+                data = mod_df_remod,
+                family = betar(),
+                method = 'ML')
+summary(remodBio1)
+gam.check(remodBio1) # qq plot still showing right skewed data but histogram is better
+draw(remodBio1)
+
+# RMSE
+sqrt(mean((mod_df_remod$Biophony - remodBio1$fitted.values^3)^2))
+
+# Parameteric values
+# ARUlg: -0.19237
+fromLogit(-0.19237) # LG ARUs have smaller effect on Biophony than AM
+
+# logwavs -0.27723
+fromLogit(-0.27723) # logwavs, as number of wavs increases Biophony decreases
+
+termplot(remodBio1)
+
+# Visualize model predictions and actual
+# predict based on original values
+mod_df_remod$Biophony_pred = predict(remodBio1, newdata = mod_df_remod, type = "response")^3
+
+# Grouped by ARU
+(gg <- mod_df_remod %>%
+  select(site_richness, Biophony, Biophony_pred, ARU) %>%
+  gather(covariate, value, -Biophony, -Biophony_pred, -ARU) %>%
+  ggplot(aes(x = value, y = Biophony_pred * 100)) +
+    geom_point(aes(x = value, y = Biophony * 100, colour = ARU), alpha = 0.5) +
+    geom_point(alpha = 0.1) +
+    geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
+    # ggtitle("Biophony: black = predicted values") +
+    labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
+    scale_color_hue(labels = c("Audiomoth", "LG"), ) +
+    theme_bw() +
+    guides(colour = guide_legend(title = 'Observed values')) +
+    theme(legend.position = "top"))
+
+ggsave(filename = 'figure_r4.png', 
+       plot = gg, 
+       device = 'png',
+       path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
+       width = 6, height = 4, dpi = 500)
+
+# grouped by LULC
+mod_df_remod %>%
+  select(site_richness, Biophony, Biophony_pred, ARU, LULC) %>%
+  gather(covariate, value, -Biophony, -Biophony_pred, -ARU, -LULC) %>%
+  ggplot(aes(x = value, y = Biophony_pred)) +
+  geom_point(aes(x = value, y = Biophony, colour = LULC), alpha = 0.3, size = 2,
+             position = position_jitter(w = 0.1, h = 0)) +
+  #geom_point(alpha = 0.1) +
+  # geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
+  geom_smooth(method = 'glm', aes(colour = LULC), alpha = 0.4, se = FALSE) +
+  ggtitle("Biophony: black = predicted values") +
+  labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
+  theme_bw() +
+  scale_colour_brewer(palette = "Set1")
+
+pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
+
+mod_df_remod %>%
+  select(LULC, site_richness) %>%
+  group_by(LULC) %>%
+  summarise(mean(site_richness),
+            sd(site_richness),
+            n(site_richness))
+pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
+
+#####################################
+# SPP RICH ~ SOUNDSCAPE SOURCES
+# visualize data
 # scale covariates ABGQI
 mod_df = mod_df %>%
   mutate(Anthropophony = min_max_norm(Anthropophony),
@@ -81,19 +220,7 @@ mod_df = mod_df %>%
          Geophony      = min_max_norm(Geophony),
          Quiet         = min_max_norm(Quiet),
          Interference  = min_max_norm(Interference))
-mod_df = merge(site_spp_rich, mod_df, by = 'site')
 
-mean(mod_df$site_richness)
-sd(mod_df$site_richness)
-
-mod_df = mod_df %>%
-  mutate(ARU = factor(ARU),
-         logwavs = log(wavs)) %>%
-  select(-c(site))
-
-#####################################
-# SPP RICH ~ SOUNDSCAPE SOURCES
-# visualize data
 mod_df %>%
   gather(soundType, value, -site_richness, -ARU) %>%
   ggplot(aes(x = value, y = site_richness, colour = ARU)) +
@@ -106,6 +233,7 @@ mod1 = gam(site_richness ~
              ARU +
              logwavs +
              s(Anthropophony, k = 5) + 
+             # s(Biophony, k = 5) +
              s(Geophony, k = 5) + 
              s(Quiet, k = 5) + 
              s(Interference, k = 5),
@@ -117,12 +245,33 @@ par(mfrow = c(2, 2))
 gam.check(mod1) # looks good
 draw(mod1, scales = 'fixed')
 
+# ARU p = 0.25
+mod2 = gam(site_richness ~ 
+             logwavs +
+             s(Anthropophony, k = 5) + 
+             s(Biophony, k = 5) +
+             s(Geophony, k = 5) + 
+             s(Quiet, k = 5) + 
+             s(Interference, k = 5),
+           data = mod_df,
+           family = poisson(),
+           method = 'ML')
+summary(mod2)
+gam.check(mod2) # looks good
+draw(mod2, scales = 'fixed')
+draw(mod2)
+vis.gam(mod2, view = c('Anthropophony', 'Biophony'), theta = 45)
+
 # summarized slopes
-ci = slope_summary(mod1)
+ci = slope_summary(mod2)
 model_slopes = cbind(index = rep('Bird Spp. Richness', times = nrow(ci)), ci)
 
 # visualize predictions vs observed
-pred_plot(data_df = mod_df, model_fit = mod1, index_name = "site_richness")
+pred_plot(data_df = mod_df, model_fit = mod1_noBio, index_name = "site_richness")
+
+# RMSE
+sqrt(mean((mod_df$site_richness - mod2$fitted.values)^2))
+sqrt(mean((mod_df$site_richness - mod1_noBio$fitted.values)^2))
 
 # Visualize slope objects 
 # calculate all slope values
@@ -172,71 +321,6 @@ annotate_figure(allplots, top = text_grob("95% CI for first derivative (slopes) 
 Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
                 bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
                                    size = 10)) 
-
-#############################################
-# BIOPHONY ~ SPP RICH 
-# visualize data
-mod_df %>%
-  select(Biophony, site_richness, ARU) %>%
-  ggplot(aes(y = Biophony, x = site_richness, colour = ARU)) +
-    geom_point(alpha = 0.3) +
-    geom_smooth(method = "gam")
-hist(mod_df$Biophony)
-hist(sqrt(mod_df$Biophony))
-
-mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
-mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
-mod_df$logBiophony = log(mod_df$Biophony+1e-7)
-hist(mod_df$logBiophony) # one extreme outlier that will impact model fit [886,]
-mod_df = mod_df[-886,]
-
-modBio1 = gam(cuberootBiophony ~ 
-                ARU +
-                logwavs +
-                s(site_richness, k = 5),
-             data = mod_df,
-             family = betar(),
-             method = 'ML')
-summary(modBio1)
-par(mfrow = c(2,2))
-gam.check(modBio1) # some tail behavior in QQ and a right skewed histogram - check on this value
-
-# check on the extreme residuals
-mod_df$resids = data.frame(residuals.gam(modBio1, type = 'deviance'))
-mod_df_remod = mod_df %>% # [-639,] 
-  filter(resids < 8) # high Biophony (>95%) with low spp richness
-
-remodBio1 = gam(cuberootBiophony ~ 
-                ARU +
-                logwavs +
-                s(site_richness, k = 5),
-              data = mod_df_remod,
-              family = betar(),
-              method = 'ML')
-summary(remodBio1)
-gam.check(remodBio1) # qq plot still showing right skewed data but histogram is better
-
-draw(remodBio1)
-
-# RMSE
-sqrt(mean((mod_df_remod$Biophony - remodBio1$fitted.values^3)^2))
-
-# Visualize model predictions and actual
-# predict based on original values
-mod_df_remod$Biophony_pred = predict(remodBio1, newdata = mod_df_remod, type = "response")^3
-
-mod_df_remod %>%
-  select(site_richness, Biophony, Biophony_pred, ARU) %>%
-  gather(covariate, value, -Biophony, -Biophony_pred, -ARU) %>%
-  ggplot(aes(x = value, y = toLogit(Biophony_pred))) +
-    geom_point(aes(x = value, y = toLogit(Biophony), colour = ARU), alpha = 0.5) +
-    geom_point(alpha = 0.1) +
-    geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
-    ggtitle("Biophony: black = predicted values") +
-    labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
-    theme_bw()
-
-pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
 
 #############################################
 # SPP RICH ~ ACOUSTIC INDEX ANALYSIS
@@ -384,6 +468,11 @@ par(mfrow = c(2,2))
 gam.check(mod5, type = 'response')
 draw(mod5, scales = 'fixed')
 
+# MSE
+mean((mod_df_indices$site_richness - mod5$fitted.values)^2)
+
+# parametric ARU (LG) effect
+exp(0.31384)
 
 # summarized slopes
 ci = slope_summary(mod5)
@@ -416,3 +505,13 @@ Note: should be interpreted alongside partial effects plots.", size = 14, face =
                 bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
                                    size = 10)) 
 
+(gg <- draw(mod5, 
+            scales = "fixed", 
+            ncol = 4) &
+    theme_bw())
+
+ggsave(filename = 'figure_r5.png', 
+       plot = gg, 
+       device = 'png',
+       path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
+       width = 8, height = 8, dpi = 500)

@@ -111,6 +111,10 @@ center_scale = function(x , mu, sd){
   (x - mu) / sd
 }
 
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE)
+)
 
 # Mean independent (ie robust to outlier) estimate of scale for an array of values
 MAD_z = function(array){

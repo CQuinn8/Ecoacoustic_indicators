@@ -1,12 +1,9 @@
-
-# Interpret deviance and Rsq: https://stats.stackexchange.com/questions/190172/how-i-can-interpret-gam-results
-
-
 library(data.table)
 library(dplyr)
 library(ggplot2)
 library(tidyverse)
 library(ggpubr)
+library(gratia)
 source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
 
 # Todo:
@@ -15,11 +12,33 @@ source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper
 #     so the index is sensitive to ANY presence vs a more steady/linear relationship. E.g. if the curve 
 #     is logarithmic any presence of the sound is impactful vs if it is exponential there needs to be a 
 #     good amount of the signal to affect the index.
-wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/'
-indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
+
+# Formated index names
+index_names <- list(
+  'ACI' = "ACI",
+  'ADI' = "ADI",
+  'AEI' = "AEI",
+  'BI' = "BI",
+  'H' = "H",
+  'Hs' = expression(H[s]),
+  'Ht' = expression(H[t]),
+  'M' = "M",
+  'NDSI' = "NDSI",
+  'NDSI_A' = "NDSI-\u03B1",
+  'NDSI_B' = "NDSI-\u03B2",
+  'R' = "R",
+  'rugo' = "Rugosity",
+  'sfm' = "SFM",
+  'zcr_mean' = "ZCR"
+)
+index_labeller <- function(variable,value){
+  return(index_names[value])
+}
+wd <- '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/'
+indices_df <- fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
 
 # read in abgqi data
-abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+abgqi_df <- fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
@@ -28,20 +47,16 @@ abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
          Quiet = Quiet_mean, Interference = Interference_mean)
 
 # Clean sites that are known problems
-abgqi_df_no_error = abgqi_df %>%
+abgqi_df_no_error <- abgqi_df %>%
   filter(wavs >= (144 * 2.5)) # 44 sites
 
 # sites with static
-# s2lam050_190411, s2lam049_210501 : a lot of static but still has other signal
-error_sites = read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
-error_sites = paste0(error_sites$SiteID, collapse = '|')
-abgqi_df_no_error = abgqi_df_no_error[!grepl(error_sites, abgqi_df_no_error$site),] # 7 sites dropped after filter above
+error_sites <- read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites <- paste0(error_sites$SiteID, collapse = '|')
+mod_df <- abgqi_df_no_error[!grepl(error_sites, abgqi_df_no_error$site),] # 7 sites dropped after filter above
 
-# Number of minutes in model data
-mod_df = abgqi_df_no_error
-
-# scale covariates ABGQI
-mod_df = mod_df %>%
+# scale ABGQI
+mod_df <- mod_df %>%
   mutate(Anthropophony = min_max_norm(Anthropophony),
          Biophony      = min_max_norm(Biophony),
          Geophony      = min_max_norm(Geophony),
@@ -49,8 +64,8 @@ mod_df = mod_df %>%
          Interference  = min_max_norm(Interference))
 
 # Read in model objects
-model_objects = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_objects_20June2022.RData'))
-model_slopes = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_slopes_20June2022.RData'))
+model_objects <- readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_objects_20June2022.RData'))
+model_slopes <- readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_objects/gam_model_slopes_20June2022.RData'))
 
 
 
@@ -59,7 +74,7 @@ model_slopes = readRDS(file = paste0(wd, 'modeling/acoustic_indices/LM_model_obj
 length(unique(mod_df$site)) # sites used in analyses
 sum(mod_df$wavs)            # number of recordings in analyses
 
-# count number of sites per year
+# count number of sites per year (note - one site mislabeled 2041 instead of 2021)
 mod_df %>%
   mutate(YY = substr(site, 10, 11)) %>%
   group_by(YY) %>%
@@ -71,26 +86,21 @@ mod_df %>%
   group_by(YY) %>%
   summarise(sum(wavs))
 
-length(unique(abgqi_df$site)) # total sites pre-analysis
-sum(abgqi_df$wavs)            # total wavs pre-analysis
+length(unique(abgqi_df$site)) # total sites pre-analysis (n = 1,247)
+sum(abgqi_df$wavs)            # total wavs pre-analysis (n = 741,061)
 
-# get mean and sd ABGQ after removing Int
-mean_sd <- list(
-  mean = ~mean(.x, na.rm = TRUE), 
-  sd = ~sd(.x, na.rm = TRUE)
-)
 mod_df %>%
-  select(Anthropophony, Biophony, Geophony, Quiet) %>%
+  select(Anthropophony, Biophony, Geophony, Quiet, Interference) %>%
   dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
   round(6) * 100
 
 ######################################
 # Visualize slope objects
 # calculate all slope values
-slope_df = do.call("rbind", model_slopes)
+slope_df <- do.call("rbind", model_slopes)
 
 # use middle 99% of x values to plot slopes to avoid extreme tail behavior
-abgqi_limits = mod_df %>%
+abgqi_limits <- mod_df %>%
   select(Anthropophony, Biophony, Geophony, Quiet, Interference) %>%
   gather(variable, value) %>%
   group_by(variable) %>%
@@ -98,7 +108,7 @@ abgqi_limits = mod_df %>%
             upper = quantile(value, 0.995))
 
 # filter slope df based on percentile values
-slope_df_filtered = slope_df %>%
+slope_df_filtered <- slope_df %>%
   filter(case_when(var == 'Anthropophony' ~ data >= abgqi_limits$lower[1] & data <= abgqi_limits$upper[1],
                    var == 'Biophony'      ~ data >= abgqi_limits$lower[2] & data <= abgqi_limits$upper[2],
                    var == 'Geophony'      ~ data >= abgqi_limits$lower[3] & data <= abgqi_limits$upper[3],
@@ -109,82 +119,33 @@ slope_df_filtered %>%
   summarise(min = min(data, na.rm = TRUE),
             max = max(data, na.rm = TRUE))
 
-# summarize slope trends
-slope_cis = slope_df_filtered %>%
-  select(-smooth) %>%
-  group_by(index, var) %>%
-  summarise(across(where(is.numeric), ~ median(.x, na.rm = TRUE))) %>%
-  mutate(index = factor(index))
-
-# summarize slope trends using CI of mean
-# slope_cis = slope_df %>%
-#   select(-smooth, -se, -crit, -lower, -upper) %>%
-#   group_by(index, var) %>%
-#   summarise(lower025 = quantile(derivative, 0.025),
-#             upper975 = quantile(derivative, 0.975),
-#             median = quantile(derivative, 0.50)) %>%
-#   mutate(index = factor(index))
-
-# Facet = soundscape components
-# simple 95% CI error plot of summary
-avg_slope_error_plot = function(slope_avg_df, temp_index) {
-  temp_min = floor(min(slope_avg_df$lower))
-  temp_max = ceiling(max(slope_avg_df$upper))
-  gg = slope_avg_df %>%
-    group_by(var) %>%
-    filter(var == temp_index) %>%
-    mutate(index = fct_reorder(index, derivative)) %>%
-    ggplot(aes(x = index, y = derivative)) +
-    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 1) +
+# Plot slope boxplots
+(gg <- slope_df_filtered %>%
+    mutate(var = factor(var, levels = c( 'Interference','Quiet', 'Geophony','Biophony','Anthropophony'))) %>%
+    ggplot(aes(x = factor(var), y = derivative)) +
+    geom_boxplot(width = 0.5, 
+                 outlier.shape = NA, 
+                 position = position_dodge(preserve = "single"),
+                 notch = TRUE) +
     geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-    ylim(c(temp_min, temp_max)) + # min max in slope df
     ylab("Slope") +
-    xlab("Acoustic Index") +
+    xlab("Soundscape Source") +
+    scale_fill_manual(values = c('#B8B8B8', '#FFFFFF'), name = "") +
     coord_flip() +
-    facet_wrap(~var) +
-    theme_bw()
-  return(gg)
-}
+    theme_bw() +
+    facet_wrap(~index, scales = 'free_x', labeller = index_labeller) +
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+    theme(legend.position = 'bottom',
+          text = element_text(size = 16, family = 'Calibri'),
+          axis.text.x = element_text(angle = 45, hjust = 1)))
 
-ggAnthro = avg_slope_error_plot(slope_cis, 'Anthropophony')
-ggBio = avg_slope_error_plot(slope_cis, 'Biophony')
-ggGeo = avg_slope_error_plot(slope_cis, 'Geophony')
-ggQuiet = avg_slope_error_plot(slope_cis, 'Quiet')
-ggInt = avg_slope_error_plot(slope_cis, 'Interference')
-allplots = ggarrange(ggAnthro, ggBio, ggGeo, ggQuiet, ggInt, 
-                     ncol = 3, nrow = 2,
-                     labels = c("A", "B", "C", "D", "E"))
-annotate_figure(allplots, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
-Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
-                bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
-                                   size = 10))          
+# (gg = annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
+# Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
+#                 bottom = text_grob("Values reflect middle 99% of covariate range to minimize erroneous tail behavior.",
+#                                    size = 10)))
 
-# Figure R1
-# Facet = GAM models
-temp_min = floor(min(slope_cis$lower))
-temp_max = ceiling(max(slope_cis$upper))
-(gg = slope_cis %>%
-  mutate(var = factor(var, levels = c('Interference', 'Quiet','Geophony', 'Biophony',"Anthropophony"))) %>%
-  mutate(index = factor(index, levels = c("zcr_mean","ACI","M","H","Hs","NDSI_A","AEI","Ht","rugo","NDSI_B","NDSI",
-                             "ADI","sfm","BI","R"))) %>% # ordered by deviance 
-  ggplot(aes(x = var, y = derivative)) +
-  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-  ylim(c(temp_min, temp_max)) + # min max in slope df
-  ylab("Slope") +
-  xlab("Acoustic Index") +
-  coord_flip() +
-  facet_wrap(~index) +
-  theme_bw())
-
-(gg = annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
-Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
-                bottom = text_grob("Values reflect middle 99% of covariate range to minimize erroneous tail behavior.",
-                                   size = 10)))
-
-ggsave(gg, filename = paste0(wd, '/modeling/acoustic_indices/GAM_slopes_by_model.png'), 
+ggsave(gg, filename = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/FigR1-GAM_slopes_by_model.png', 
                              height = 6, width = 6.5, unit = 'in', dpi = 500)
-
 
 ######################################
 # Summarize model fits
@@ -231,8 +192,10 @@ R1 %>%
 
 ######################################
 # Visualize partial effects + interpretation
+temp_df = merge(x = indices_df, y = mod_df)
+  
 # y-axis is the centered smooth
-draw(model_objects$zcr_mean, scales = "fixed")
+draw(model_objects$zcr_mean, scales = "fixed", residuals = TRUE)
 # most affected by anthro, negatively
 # Bio has small effect mostly at lower values too
 # Geophony and int are negatively related
@@ -245,37 +208,43 @@ model_objects$ACI
 # Geophony also is positive (slightly more than Bio)
 # Anthro is increasing at lesser rate
 
-draw(model_objects$M, scales = "fixed")
+draw(model_objects$M, scales = "fixed", residuals = TRUE)
 # minimal biophony effect
 # strong log shaped Anthro and exponential Interference
 # Geophony is positive until some mixed behavior at sparser mid-high values
 
-draw(model_objects$H, scales = "fixed")
+draw(model_objects$H, scales = "fixed", residuals = TRUE)
+summary(model_objects$H)
 
-draw(model_objects$Hs, scales = "fixed")
+draw(model_objects$Hs, scales = "fixed", residuals = TRUE)
+summary(model_objects$Hs)
 
-draw(model_objects$NDSI_A, scales = "fixed")
+draw(model_objects$NDSI_A, scales = "fixed", residuals = TRUE)
+summary(model_objects$NDSI_A)
 
-draw(model_objects$AEI, scales = "fixed")
+draw(model_objects$AEI, scales = "fixed", residuals = TRUE)
 
-draw(model_objects$Ht, scales = "fixed")
+draw(model_objects$Ht, scales = "fixed", residuals = TRUE)
+summary(model_objects$Ht)
 
-draw(model_objects$rugo, scales = "fixed")
+draw(model_objects$rugo, scales = "fixed", residuals = TRUE)
 
-draw(model_objects$NDSI_B, scales = "fixed")
+draw(model_objects$NDSI_B, scales = "fixed", residuals = TRUE)
+summary(model_objects$NDSI_B)
 
-draw(model_objects$NDSI, scales = "fixed")
-model_objects$NDSI
+draw(model_objects$NDSI, scales = "fixed", residuals = TRUE)
+summary(model_objects$NDSI)
 # weakly impacted by interference (positive)
 # negative Anthro
 # Strong positive effect from Bio and lessser so Quiet
 
-draw(model_objects$ADI, scales = "fixed")
+draw(model_objects$ADI, scales = "fixed", residuals = TRUE)
 
-draw(model_objects$sfm, scales = "fixed")
+draw(model_objects$sfm, scales = "fixed", residuals = TRUE)
 model_objects$sfm
 summary(indices_df$sfm)
 
-draw(model_objects$BI, scales = "fixed")
+draw(model_objects$BI, scales = "fixed", residuals = TRUE)
+pred_plot(data_df = temp_df, model_fit = model_objects$BI, index_name = "BI")
 
-draw(model_objects$R, scales = "fixed")
+draw(model_objects$R, scales = "fixed", residuals = TRUE)

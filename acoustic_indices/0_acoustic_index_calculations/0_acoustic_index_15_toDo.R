@@ -94,27 +94,48 @@ for(i in 1:n){
 		  samp_freq = soundfile@samp.rate # 44100 for LG; 48000 for AM
 		  
 		  # calculate each acoustic index 
-		  # AI from soundecology: NDSI (~ to Hf, spectral entropy), BI, AEI, ADI
+		  # Soundecology derived indices
 		  ndsi_indices <- soundecology::ndsi(soundfile, fft_w = 1024, anthro_min = 1000, anthro_max = 2000, bio_min = 2000, bio_max = 10000)
+		  
 		  ndsi <- ndsi_indices$ndsi_left
+		  
 		  anthro <- ndsi_indices$anthrophony_left
+		  
 		  bio <- ndsi_indices$biophony_left
-		  bi <- soundecology::bioacoustic_index(soundfile, min_freq = 2000, max_freq = 10000)$left_area
+		  
+		  # Biophony Index (Boelman et al., 2007: Appendix A <https://esapubs.org/archive/appl/A017/086/appendix-A.htm>)
+		  bi <- soundecology::bioacoustic_index(soundfile, min_freq = 2000, max_freq = 10000)$left_area 
+		  
 		  aei <- soundecology::acoustic_evenness(soundfile, max_freq = 10000, db_threshold = -50, freq_step = 1000)$aei_left
+		  
 		  adi <- soundecology::acoustic_diversity(soundfile, max_freq = 10000, db_threshold = -50, freq_step = 1000, shannon = TRUE)$adi_left
 
-		  # AI from seewave: ACI, H, sh, ht
+		  
+	    # SEEWAVE derived indices
 		  spec = spec(soundfile, f = samp_freq, plot = FALSE)
+		  
 		  env <- seewave::env(soundfile, plot = FALSE)
+		  
 		  aci <- seewave::ACI(soundfile, flim = c(1,10))
+		  
 		  h <- seewave::H(soundfile, wl = 512)
+		  
+		  # Temporal entropy (Sueur et al., 2008)
 		  ht <- seewave::th(env)
+		  
+		  # Shannon's spectral entorpy (Sueur et al., 2008)
 		  sh <- seewave::sh(spec)
+		  
 		  rms <- seewave::rms(env)
+		  
 		  zcr <- seewave::zcr(soundfile, plot = FALSE)
+		  
 		  M <- seewave::M(soundfile)
+		  
 		  rough <- seewave::roughness(meanspec(soundfile, plot = FALSE)[,2])
+		  
 		  sfm <- seewave::sfm(spec)
+		  
 		  rugo <- seewave::rugo(soundfile@left/max(soundfile@left))
 		  
 		  ##########################################
