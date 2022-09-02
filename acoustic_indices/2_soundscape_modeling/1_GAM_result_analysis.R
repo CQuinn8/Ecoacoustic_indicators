@@ -13,27 +13,6 @@ source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper
 #     is logarithmic any presence of the sound is impactful vs if it is exponential there needs to be a 
 #     good amount of the signal to affect the index.
 
-# Formated index names
-index_names <- list(
-  'ACI' = "ACI",
-  'ADI' = "ADI",
-  'AEI' = "AEI",
-  'BI' = "BI",
-  'H' = "H",
-  'Hs' = expression(H[s]),
-  'Ht' = expression(H[t]),
-  'M' = "M",
-  'NDSI' = "NDSI",
-  'NDSI_A' = "NDSI-\u03B1",
-  'NDSI_B' = "NDSI-\u03B2",
-  'R' = "R",
-  'rugo' = "Rugosity",
-  'sfm' = "SFM",
-  'zcr_mean' = "ZCR"
-)
-index_labeller <- function(variable,value){
-  return(index_names[value])
-}
 wd <- '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/'
 indices_df <- fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
 

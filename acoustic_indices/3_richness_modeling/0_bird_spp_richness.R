@@ -60,13 +60,11 @@ abgqi_df = fread(paste0(wd, 'results/ABGQI_inference/averages/site_avg_ABGQI.csv
   select(site, wavs, contains('mean'), ARU, -Unidentified_mean) %>%
   rename(Anthropophony = Anthropophony_mean, Biophony = Biophony_mean, Geophony = Geophony_mean,
          Quiet = Quiet_mean, Interference = Interference_mean)
+
 indices_df = fread(paste0(wd, 'results/acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
 
 
 # Clean sites that are known problems
-# 1. insufficient number of recordings
-# 2. Sites known to have constant static error
-# functioning sites always had > 2.5 days (60 hours) of recordings
 abgqi_df = abgqi_df %>%
   filter(wavs >= (144 * 2.5)) # 44 sites
 
@@ -76,33 +74,34 @@ error_sites = read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquin
 error_sites = paste0(error_sites$SiteID, collapse = '|')
 abgqi_df_no_error = abgqi_df[!grepl(error_sites, abgqi_df$site),] # 7 sites dropped after filter above
 
-# Number of minutes in model data
-mod_df = abgqi_df_no_error
-sum(mod_df$wavs) #726801
+# subset indices to target sites
+indices_df = indices_df[indices_df$site %in% sites$sites, ]
 
-mod_df = merge(site_spp_rich, mod_df, by = 'site')
-
+# Merge dataframes keeping all records in mod_df
+mod_df = abgqi_df_no_error %>%
+  left_join(y = site_spp_rich, by = 'site') %>%
+  replace_na(list(site_richness = 0))
 mean(mod_df$site_richness)
 sd(mod_df$site_richness)
 
-# Subset LULC to target sites and determine Max LULC ID
-lulc_df = lulc_df[lulc_df$SiteID %in% mod_df$site,] %>%       # 1195 (13 non-unique duplicates)
-  distinct(SiteID, .keep_all = TRUE) %>%                      # select dinstinct rows 1182 sites
-  select(SiteID, 'Oak-Hardwood Forest', Grassland, Shrubland, # select the LULC cols and SiteID
-         Riparian, 'Conifer Forest', 'Agriculture-Barren',
-         Wetland, Urban) %>% # TODO: V19
-  gather(LULC, pct, -SiteID) %>%                              # gather DF into LULC, PCT, and SiteName
-  group_by(SiteID) %>%                                        # for each Site
-  slice(which.max(pct)) %>%                                   # select top LULC
-  select(-pct)
+# # Subset LULC to target sites and determine Max LULC ID
+# lulc_df = lulc_df[lulc_df$SiteID %in% mod_df$site,] %>%       # 1195 (13 non-unique duplicates)
+#   distinct(SiteID, .keep_all = TRUE) %>%                      # select dinstinct rows 1182 sites
+#   select(SiteID, 'Oak-Hardwood Forest', Grassland, Shrubland, # select the LULC cols and SiteID
+#          Riparian, 'Conifer Forest', 'Agriculture-Barren',
+#          Wetland, Urban) %>% # TODO: V19
+#   gather(LULC, pct, -SiteID) %>%                              # gather DF into LULC, PCT, and SiteName
+#   group_by(SiteID) %>%                                        # for each Site
+#   slice(which.max(pct)) %>%                                   # select top LULC
+#   select(-pct)
 
-# Combine ABGQ, Rich, LULC
-mod_df = lulc_df %>%
-  inner_join(mod_df, by = c("SiteID" = 'site')) %>%
-  ungroup() %>%
-  mutate(ARU = factor(ARU),
-         logwavs = log(wavs)) %>%
-  select(-SiteID)
+# # Combine ABGQ, Rich, LULC
+# mod_df = lulc_df %>%
+#   inner_join(mod_df, by = c("SiteID" = 'site')) %>%
+#   ungroup() %>%
+#   mutate(ARU = factor(ARU),
+#          logwavs = log(wavs)) %>%
+#   select(-SiteID)
 
 #############################################
 # BIOPHONY ~ SPP RICH 
@@ -152,11 +151,11 @@ draw(remodBio1)
 sqrt(mean((mod_df_remod$Biophony - remodBio1$fitted.values^3)^2))
 
 # Parameteric values
-# ARUlg: -0.19237
-fromLogit(-0.19237) # LG ARUs have smaller effect on Biophony than AM
+# ARUlg: -0.19437
+fromLogit(-0.19437) # LG ARUs have smaller effect on Biophony than AM
 
-# logwavs -0.27723
-fromLogit(-0.27723) # logwavs, as number of wavs increases Biophony decreases
+# logwavs -0.27740
+fromLogit(-0.27740) # logwavs, as number of wavs increases Biophony decreases
 
 termplot(remodBio1)
 
@@ -324,7 +323,9 @@ Note: should be interpreted alongside partial effects plots.", size = 14, face =
 
 #############################################
 # SPP RICH ~ ACOUSTIC INDEX ANALYSIS
-mod_df_indices = merge(indices_df, site_spp_rich, by = 'site') 
+mod_df_indices = indices_df %>%
+  left_join(y = site_spp_rich, by = 'site') %>%
+  replace_na(list(site_richness = 0))
 mod_df_indices = merge(mod_df_indices, abgqi_df_no_error, by = 'site') %>%
   mutate(logwavs = log(wavs),
          ARU = factor(ARU)) %>%
@@ -355,10 +356,9 @@ mod1 = gam(site_richness ~
 summary(mod1)
 gam.check(mod1, type = 'response') # correct family and error structure
 
-# drop rugo (p = 0.9233)
+# drop ARU (p = 0.961)
 mod2 = gam(site_richness ~ 
              logwavs +
-             ARU +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
@@ -371,111 +371,117 @@ mod2 = gam(site_richness ~
              s(Ht, k = 5)+ 
              s(M, k = 5)+ 
              s(R, k = 5)+ 
+             s(rugo, k = 5)+ 
              s(sfm, k = 5)+ 
              s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod2)
+AIC(mod1, mod2)
 
-# drop zcr (p = 0.4670)
+# drop rugo (p = 0.798980)
 mod3 = gam(site_richness ~ 
              logwavs +
-             ARU +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5),
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
+             s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod3)
+AIC(mod2, mod3)
 
-
-# drop ARU (p = 0.33)
+# drop R (p = 0.79232)
 mod4 = gam(site_richness ~ 
              logwavs +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5),
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(sfm, k = 5) + 
+             s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod4)
+AIC(mod3, mod4)
 
-# drop Hs (p = 0.2042)
+# drop Hs (p = 0.480877)
 mod5 = gam(site_richness ~ 
              logwavs +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+  
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5),
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(sfm, k = 5) + 
+             s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod5)
+AIC(mod4, mod5)
 
-# try dropping R (p = 0.051070)
+# drop zcr (p = 0.123)
 mod6 = gam(site_richness ~ 
              logwavs +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+  
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
              s(sfm, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
-
-AIC(mod5, mod6) # AIC suggests keeping R in model
+summary(mod6)
+AIC(mod5, mod6)
 
 # mod
-summary(mod5)
+summary(mod6)
 par(mfrow = c(2,2))
-gam.check(mod5, type = 'response')
-draw(mod5, scales = 'fixed')
+gam.check(mod6, type = 'response')
+draw(mod6, scales = 'fixed', residuals = TRUE)
+pred_plot(data_df = mod_df_indices, model_fit = mod6, index_name = 'site_richness')
 
-# MSE
-mean((mod_df_indices$site_richness - mod5$fitted.values)^2)
 
-# parametric ARU (LG) effect
-exp(0.31384)
+# RMSE
+sqrt(mean((mod_df_indices$site_richness - mod6$fitted.values)^2))
+
+# parametric wavs effect
+exp(0.2988)
 
 # summarized slopes
-ci = slope_summary(mod5)
+ci = slope_summary(mod6)
 model_slopes = cbind(index = rep('Bird Spp. Richness', times = nrow(ci)), ci)
 
 # Visualize slope objects 
@@ -500,18 +506,32 @@ temp_max = ceiling(max(slope_df_filtered$upper))
       xlab("Acoustic Index") +
       coord_flip() +
       theme_bw())
-annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
-Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
-                bottom = text_grob("Values reflect middle 99% of covariate range based on erroneous tail behavior.",
-                                   size = 10)) 
 
-(gg <- draw(mod5, 
+(gg <- draw(mod6, 
             scales = "fixed", 
             ncol = 4) &
     theme_bw())
 
-ggsave(filename = 'figure_r5.png', 
+ggsave(filename = 'figure_6.png', 
        plot = gg, 
        device = 'png',
        path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
        width = 8, height = 8, dpi = 500)
+
+#############################################
+# SPP RICH ~ Biophony
+mod_df = mod_df %>%
+  select(Biophony, site_richness, logwavs, ARU) %>%
+  mutate(Biophony = min_max_norm(Biophony))
+
+mod1 = gam(site_richness ~ 
+             logwavs +
+             ARU +
+             s(Biophony, k = 5),
+           data = mod_df,
+           family = poisson(),
+           method = 'ML')
+
+summary(mod1)
+gam.check(mod1)
+draw(mod1)

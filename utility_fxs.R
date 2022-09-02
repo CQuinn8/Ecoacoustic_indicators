@@ -170,7 +170,7 @@ pred_plot = function(data_df, model_fit, index_name, link) {
     ggplot(aes(x = value, y = y_pred)) +
       geom_point(alpha = 0.4) +
       geom_point(aes(x = value, y = acoustic_index, colour = ARU), alpha = 0.3) +
-      facet_wrap(~covariate) +
+      facet_wrap(~covariate, scales = 'free') +
       ggtitle(paste0(index_name, ": black = predicted values"))
   
   # data_df %>%
@@ -195,4 +195,26 @@ slope_summary = function(model) {
   fd = do.call("rbind", fd)
   
   return(fd)
+}
+
+# Formated index names
+index_names <- list(
+  'ACI' = "ACI",
+  'ADI' = "ADI",
+  'AEI' = "AEI",
+  'BI' = "BI",
+  'H' = "H",
+  'Hs' = expression(H[s]),
+  'Ht' = expression(H[t]),
+  'M' = "M",
+  'NDSI' = "NDSI",
+  'NDSI_A' = "NDSI-\u03B1",
+  'NDSI_B' = "NDSI-\u03B2",
+  'R' = "R",
+  'rugo' = "Rugosity",
+  'sfm' = "SFM",
+  'zcr_mean' = "ZCR"
+)
+index_labeller <- function(variable,value){
+  return(index_names[value])
 }
