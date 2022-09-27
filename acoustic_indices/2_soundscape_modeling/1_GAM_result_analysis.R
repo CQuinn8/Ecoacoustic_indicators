@@ -73,6 +73,33 @@ mod_df %>%
   dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
   round(6) * 100
 
+# Visual number of sites by year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  filter(YY != 41) %>%
+  ggplot(aes(x = YY)) +
+    geom_bar(fill = '#3E97B6') +
+    theme_bw() +
+    ggtitle('Number of survey sites per year') +
+    xlab('Year') +
+    ylab('Count of sites')
+  
+
+# Visual number of recs by year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  filter(YY != 41) %>%
+  group_by(YY) %>%
+  mutate(Count = sum(wavs) / 726378 * 1195) %>%
+  ggplot(aes(x = YY)) +
+    geom_bar(fill = '#3E97B6') +
+  geom_point(aes(y = Count, x = YY), size = 5) +
+    theme_bw() +
+    ggtitle('Number of survey sites per year & 
+            proportion of annual recordings') +
+    xlab('Year') +
+    ylab('Count of sites')
+
 ######################################
 # Visualize slope objects
 # calculate all slope values
@@ -102,28 +129,29 @@ slope_df_filtered %>%
 (gg <- slope_df_filtered %>%
     mutate(var = factor(var, levels = c( 'Interference','Quiet', 'Geophony','Biophony','Anthropophony'))) %>%
     ggplot(aes(x = factor(var), y = derivative)) +
-    geom_boxplot(width = 0.5, 
-                 outlier.shape = NA, 
-                 position = position_dodge(preserve = "single"),
-                 notch = TRUE) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-    ylab("Slope") +
-    xlab("Soundscape Source") +
-    scale_fill_manual(values = c('#B8B8B8', '#FFFFFF'), name = "") +
-    coord_flip() +
-    theme_bw() +
-    facet_wrap(~index, scales = 'free_x', labeller = index_labeller) +
-    scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
-    theme(legend.position = 'bottom',
-          text = element_text(size = 16, family = 'Calibri'),
-          axis.text.x = element_text(angle = 45, hjust = 1)))
+      geom_boxplot(width = 0.5, 
+                   outlier.shape = NA, 
+                   position = position_dodge(preserve = "single"),
+                   notch = TRUE) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+      ylab("Slope") +
+      xlab("Soundscape Source") +
+      scale_fill_manual(values = c('#B8B8B8', '#FFFFFF'), name = "") +
+      coord_flip() +
+      theme_bw() +
+      facet_wrap(~index, scales = 'free_x', labeller = index_labeller) +
+      scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+      theme(legend.position = 'bottom',
+            text = element_text(size = 16, family = 'Calibri'),
+            axis.text.x = element_text(angle = 45, hjust = 1)))
 
 # (gg = annotate_figure(gg, top = text_grob("95% CI for first derivative (slopes) of GAM partial effects.
 # Note: should be interpreted alongside partial effects plots.", size = 14, face = "bold"),
 #                 bottom = text_grob("Values reflect middle 99% of covariate range to minimize erroneous tail behavior.",
 #                                    size = 10)))
 
-ggsave(gg, filename = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/FigR1-GAM_slopes_by_model.png', 
+ggsave(gg, 
+       filename = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/FigR1-GAM_slopes_by_model.png', 
                              height = 6, width = 6.5, unit = 'in', dpi = 500)
 
 ######################################

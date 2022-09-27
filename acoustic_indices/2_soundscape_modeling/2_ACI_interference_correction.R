@@ -261,7 +261,8 @@ mod3 <- gam(ACI_0 ~
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(mod3)
-AIC(mod2, mod3) # Quiet suggested to stay in
+mod2$aic - mod3$aic # Quiet suggested to stay in
+
 gam.check(mod3, rep = 500)
 
 
