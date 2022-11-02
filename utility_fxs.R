@@ -1,116 +1,11 @@
-
-################## PAIRED ARU FUNCTIONS #######################
-# read in paired ABGQI data
-# read in all pairs and create dataframes of each paired set of predictions by overlapping time
-abgqi_pair_reader = function(paired_df){
-  pair_list = list()
-  for(pair in seq_along(paired_df$SiteID)){
-    temp_row = paired_df[pair,]
-    print(paste0("Pair: ",pair))
-    
-    #read in csvs
-    am = read.csv(paste0(wd, 'results/paired_ARUs/paired_ABGQI/', temp_row$SiteID, '.csv')) %>%
-      dplyr::select(Anthro, Bio, Geo, Other, Quiet, wav, mfcc) %>%
-      dplyr::rename(Anthrophony = Anthro, Biophony = Bio, Geophony = Geo, Interference = Other, Quiet = Quiet, wavAM = wav) %>%
-      gather(variable, value, -wavAM, -mfcc)
-    lg = read.csv(paste0(wd, 'results/paired_ARUs/paired_ABGQI/', temp_row$Paired_site, '.csv')) %>%
-      dplyr::select(Anthro, Bio, Geo, Other, Quiet, wav, mfcc) %>%
-      dplyr::rename(Anthrophony = Anthro, Biophony = Bio, Geophony = Geo, Interference = Other, Quiet = Quiet, wavLG = wav) %>%
-      gather(variable, value, -wavLG, -mfcc)
-    
-    # build dateframe
-    am$site_AM = temp_row$SiteID
-    am$DD = substr(am$wav, 25, 26)
-    am$HH = substr(am$wav, 28, 29)
-    am$mm = substr(am$wav, 31, 32)
-    am$DDHHmm = paste0(am$DD, am$HH, am$mm)
-    
-    lg$site_LG = temp_row$Paired_site
-    lg$DD = substr(lg$wav, 25, 26)
-    lg$HH = substr(lg$wav, 28, 29)
-    lg$mm = substr(lg$wav, 31, 32)
-    lg$DDHHmm = paste0(lg$DD, lg$HH, lg$mm)
-    
-    pair_list[[pair]] = am %>%
-      inner_join(lg, by = c('DD','HH','mm','variable','mfcc')) %>%
-      dplyr::select(wavAM, mfcc, variable, value.x, value.y, DDHHmm.x, site_AM, site_LG) %>%
-      dplyr::rename(wav = wavAM, melspec = mfcc, soundType = variable, DDHHmm = DDHHmm.x, AM = value.x, LG = value.y) %>%
-      mutate(SiteID = pair)
-    
-  }
-  pair_preds = do.call(rbind, pair_list)
-}
-
-# read in acoustic index data
-  acoustic_index_pair_reader = function(paired_df){
-  pair_list = list()
-  for(pair in seq_along(paired_df$SiteID)){
-    temp_row = paired_df[pair,]
-    print(paste0("Pair: ",pair))
-    
-    #read in csvs
-    am = read.csv(paste0(wd, 'results/paired_ARUs/paired_acoustic_indices/', temp_row$SiteID, '.csv')) %>%
-      select(-YYYY, -MM, -DD, -hh, -mm, -DDhh, -hhmm) %>%
-      rename(site_AM = site, wav = file) %>%
-      gather(variable, value, -wav, -site_AM)
-    lg = read.csv(paste0(wd, 'results/paired_ARUs/paired_acoustic_indices/', temp_row$Paired_site, '.csv')) %>%
-      select(-YYYY, -MM, -DD, -hh, -mm, -DDhh, -hhmm) %>%
-      rename(site_LG = site, wav = file) %>%
-      gather(variable, value, -wav, -site_LG)
-    
-    # build dateframe
-    am$DD = substr(am$wav, 25, 26)
-    am$HH = substr(am$wav, 28, 29)
-    am$mm = substr(am$wav, 31, 32)
-    am$DDHHmm = paste0(am$DD, am$HH, am$mm)
-    
-    lg$DD = substr(lg$wav, 25, 26)
-    lg$HH = substr(lg$wav, 28, 29)
-    lg$mm = substr(lg$wav, 31, 32)
-    lg$DDHHmm = paste0(lg$DD, lg$HH, lg$mm)
-    
-    pair_list[[pair]] = am %>%
-      inner_join(lg, by = c('DD','HH','mm','variable')) %>%
-      dplyr::select(wav.x, variable, value.x, value.y, DDHHmm.x, site_AM, site_LG) %>%
-      dplyr::rename(wav = wav.x, acIndex = variable, DDHHmm = DDHHmm.x, AM = value.x, LG = value.y) %>%
-      mutate(SiteID = pair)
-    
-  }
-  pair_indices = do.call(rbind, pair_list)
-}
-
-
-# boxplots for ARU comparison
-index_boxplot = function(df){
-  df %>%
-    ungroup() %>%
-    select(AM, LG) %>%
-    gather(ARU, value) %>%
-    ggplot(aes(x = ARU, y = value)) + 
-    geom_jitter(width = 0.1, alpha = 0.1) + 
-    geom_boxplot(alpha = 0.4, outlier.shape = NA, notch = TRUE)
-}
-
-# corr plots for ARU comparison
-corr_plotter = function(df){
-  df%>%
-    ungroup() %>%
-    select(where(is.numeric)) %>%
-    select(contains(c("AM","LG"))) %>%
-    GGally::ggpairs(aes(alpha = 0.05), progress = FALSE)
-}
-
-# function to normalize data from 0 to 1
+# function to normalize data from 0 to 1 based on min and max
 min_max_norm <- function(x) {
   min_x = min(x) - 1e-7
   max_x = max(x)
   (x - min_x) / (max_x - min_x)
 }
 
-center_scale = function(x , mu, sd){
-  (x - mu) / sd
-}
-
+# Calculates mean and sd in tidy summary
 mean_sd <- list(
   mean = ~mean(.x, na.rm = TRUE), 
   sd = ~sd(.x, na.rm = TRUE)
@@ -139,6 +34,7 @@ outlier_id = function(array){
   return(outlier_positions)
 }
 
+# Function that converts to logit space
 toLogit <- function(x){
   cx<-ifelse(x==0,0.00001,
              ifelse(x==1,0.99999,x))
@@ -146,16 +42,19 @@ toLogit <- function(x){
   return(lgx)
 }
 
+# Convert to original number line from logit space
 # x is the value to logit-transform from
 fromLogit<-function(x){
   bt<-exp(x)/(1+exp(x))
   return(bt)
 }
 
-
-
 # GAM prediction visualization
-pred_plot = function(data_df, model_fit, index_name, link) {
+pred_plot = function(data_df,     # dataframe containing response and covs
+                     model_fit,   # GAM fit object
+                     index_name,  # char matching response name
+                     link) {      # if applicable, any transformation for visual
+  
   # predict based on original values
   data_df$y_pred = predict(model_fit, newdata = data_df, type = "response")
   
@@ -172,32 +71,22 @@ pred_plot = function(data_df, model_fit, index_name, link) {
       geom_point(aes(x = value, y = acoustic_index, colour = ARU), alpha = 0.3) +
       facet_wrap(~covariate, scales = 'free') +
       ggtitle(paste0(index_name, ": black = predicted values"))
-  
-  # data_df %>%
-  #   select(-site,-wavs) %>%
-  #   rename(acoustic_index = contains(index_name)) %>%
-  #   mutate(y_diff = acoustic_index - y_pred) %>%
-  #   gather(covariate, value, -acoustic_index, -y_pred, -y_diff, -ARU) %>%
-  #     ggplot(aes(x = value, y = y_diff, alpha = 0.4)) +
-  #     geom_point() +
-  #     facet_wrap(~covariate, scales = 'free_x')
 }
 
-# GAMs
-# first derivative (i.e., partial effects slopes)
+# GAM first derivative calcualtion (i.e., partial effects slopes)
 slope_summary = function(model) {
   # covariates in model
   vars = data.frame(vars = names(model$sp)) %>%
     filter(!grepl("ARU", vars, ignore.case = TRUE))
   
-  # derivatives
+  # derivatives for each covariate 
   fd = lapply(vars$vars, function(x) derivatives(model, term = x, partial_match = TRUE))
   fd = do.call("rbind", fd)
   
   return(fd)
 }
 
-# Formated index names
+# Formated index names used for plotting
 index_names <- list(
   'ACI' = "ACI",
   'ADI' = "ADI",
@@ -215,6 +104,27 @@ index_names <- list(
   'sfm' = "SFM",
   'zcr_mean' = "ZCR"
 )
+
+# helper function that looks up unformatted index name with formatted
 index_labeller <- function(variable,value){
   return(index_names[value])
 }
+
+# PDP plot function that helps format correct number of rows based on number of covariates
+write_pdp <- function(plot_obj, index_name, rows = 1, out_dir){
+  
+  # custom figure height based on number of covariates divided by 4
+  if(rows == 1){
+    h = 3
+  } else {
+    h = 6
+  }
+  
+  # save ggplot object
+  ggsave(filename = paste0(index_name, '_pdp.png'), 
+         plot = plot_obj, 
+         device = 'png',
+         path = out_dir,
+         width = 8, height = h, dpi = 500)
+}
+
