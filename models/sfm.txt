@@ -1,0 +1,28 @@
+
+Family: Gamma 
+Link function: log 
+
+Formula:
+sfm ~ ARU + s(Anthropophony, k = 5) + s(Biophony, k = 5) + s(Geophony, 
+    k = 5) + s(Quiet, k = 5) + s(Interference, k = 5)
+
+Parametric coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+(Intercept) -0.904427   0.005403 -167.40   <2e-16 ***
+ARUlg       -0.428454   0.015316  -27.97   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Approximate significance of smooth terms:
+                   edf Ref.df      F p-value    
+s(Anthropophony) 1.000  1.000  8.689 0.00326 ** 
+s(Biophony)      1.000  1.000  9.496 0.00210 ** 
+s(Geophony)      2.027  2.526  1.981 0.11718    
+s(Quiet)         2.611  3.146  5.328 0.00102 ** 
+s(Interference)  1.000  1.000 37.041 < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+R-sq.(adj) =  0.515   Deviance explained = 56.3%
+-ML = -1668.4  Scale est. = 0.025344  n = 1194
+[1] 15

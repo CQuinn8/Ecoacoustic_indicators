@@ -1,0 +1,28 @@
+
+Family: Beta regression(12.789) 
+Link function: logit 
+
+Formula:
+ADInorm ~ ARU + s(Anthropophony, k = 5) + s(Biophony, k = 5) + 
+    s(Geophony, k = 5) + s(Quiet, k = 5) + s(Interference, k = 5)
+
+Parametric coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)  2.00113    0.02584   77.44   <2e-16 ***
+ARUlg       -1.57229    0.06845  -22.97   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Approximate significance of smooth terms:
+                   edf Ref.df Chi.sq p-value    
+s(Anthropophony) 3.753  3.963  470.8  <2e-16 ***
+s(Biophony)      1.000  1.001  124.2  <2e-16 ***
+s(Geophony)      3.786  3.971  369.5  <2e-16 ***
+s(Quiet)         3.394  3.799  125.1  <2e-16 ***
+s(Interference)  2.680  3.211  547.8  <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+R-sq.(adj) =  0.641   Deviance explained = 66.6%
+-ML = -1388.9  Scale est. = 1         n = 1194
+[1] 4
