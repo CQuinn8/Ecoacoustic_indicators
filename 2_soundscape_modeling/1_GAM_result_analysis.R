@@ -5,9 +5,10 @@ library(tidyverse)
 library(ggpubr)
 library(gratia)
 library(kableExtra)
+library(corrplot)
 source('utility_fxs.R')
 
-wd <- '/paper-AcousticIndices/results/'
+wd <- '/results/'
 out_dir <- '/figures/'
 
 # Site average acoustic indices
@@ -27,7 +28,7 @@ abgqi_df_no_error <- abgqi_df %>%
   filter(wavs >= (144 * 2.5)) # rm 44 sites
 
 # sites with static
-error_sites <- read.csv('/paper-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites <- read.csv('data/identified_problem_sites_witherrors.csv')
 error_sites <- paste0(error_sites$SiteID, collapse = '|')
 mod_df <- abgqi_df_no_error[!grepl(error_sites, abgqi_df_no_error$site),] # 7 sites dropped after filter above
 
@@ -44,7 +45,25 @@ model_objects <- readRDS(file = '/models/gam_model_objects.RData')
 model_slopes <- readRDS(file = '/models/gam_model_slopes.RData')
 
 ######################################
-# Data summaries
+# CONCURVITY
+concurvity(model_objects$ACI, full = TRUE)
+concurvity(model_objects$ADI, full = TRUE)
+concurvity(model_objects$AEI, full = TRUE)
+concurvity(model_objects$BI, full = TRUE)
+concurvity(model_objects$H, full = TRUE)
+concurvity(model_objects$Hs, full = TRUE)
+concurvity(model_objects$Ht, full = TRUE)
+concurvity(model_objects$M, full = TRUE)
+concurvity(model_objects$NDSI, full = TRUE)
+concurvity(model_objects$NDSI_A, full = TRUE)
+concurvity(model_objects$NDSI_B, full = TRUE)
+concurvity(model_objects$R, full = TRUE)
+concurvity(model_objects$rugo, full = TRUE)
+concurvity(model_objects$sfm, full = TRUE)
+concurvity(model_objects$zcr_mean, full = TRUE)
+
+######################################
+# Data summaries (Used in Table 1)
 length(unique(mod_df$site)) # sites used in analyses
 sum(mod_df$wavs)            # number of recordings in analyses
 
@@ -53,11 +72,27 @@ mod_df %>%
   mutate(YY = substr(site, 10, 11)) %>%
   group_by(YY) %>%
   count()
+# by ARU - count number of sites per year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  group_by(YY, ARU) %>%
+  count()
+mod_df %>%
+  group_by(ARU) %>%
+  count()
 
 # get number of recordings per year
 mod_df %>%
   mutate(YY = substr(site, 10, 11)) %>%
   group_by(YY) %>%
+  summarise(sum(wavs))
+# by ARU - get number of recordings per year
+mod_df %>%
+  mutate(YY = substr(site, 10, 11)) %>%
+  group_by(YY, ARU) %>%
+  summarise(sum(wavs))
+mod_df %>%
+  group_by(ARU) %>%
   summarise(sum(wavs))
 
 # Pre-analysis sites and recordings
@@ -96,6 +131,17 @@ mod_df %>%
             proportion of annual recordings') +
     xlab('Year') +
     ylab('Count of sites')
+
+# Index correlations
+indices_df %>%
+  select(names(index_names)) %>%
+  cor() %>%
+  corrplot.mixed()
+
+abgqi_df_no_error %>%
+  select(Anthropophony, Biophony, Geophony, Quiet, Interference) %>%
+  cor() %>%
+  corrplot.mixed()
 
 ######################################
 # Visualize slope objects
@@ -136,7 +182,7 @@ slope_df_filtered %>%
                    position = position_dodge(preserve = "single"),
                    notch = TRUE) +
       geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-      ylab("Slope") +
+      ylab("Partial effect slope") +
       xlab("Soundscape Components") +
       scale_fill_manual(values = c('#B8B8B8', '#FFFFFF'), name = "") +
       coord_flip() +
@@ -150,7 +196,7 @@ slope_df_filtered %>%
             axis.text.x = element_text(angle = 45, hjust = 1)))
 
 # Save figure 2
-ggsave(gg, filename = paste0(out_dir,'figure2.png'), 
+ggsave(gg, filename = paste0(out_dir,'figure_2.png'), 
        height = 6, width = 6.5, unit = 'in', dpi = 500)
 
 ######################################
@@ -173,10 +219,6 @@ sd(deviance$Deviance)
 formulas = data.frame(do.call(cbind, lapply(model_objects, function(x) summary(x)$family$family))) %>%
   gather(variable, family)
 
-# AIC 
-aics = data.frame(do.call(cbind, lapply(model_objects, function(x) AIC(x)))) %>%
-  gather(variable, AIC)
-
 # links
 links = data.frame(do.call(cbind, lapply(model_objects, function(x) summary(x)$family$link))) %>%
   gather(variable, link)
@@ -184,7 +226,7 @@ links = data.frame(do.call(cbind, lapply(model_objects, function(x) summary(x)$f
 # Table 3
 # Combine the separately created numeric summaries
 R1 = Reduce(function(...) merge(..., all = TRUE, by = 'variable'), 
-       list(formulas, links, rsq, deviance, aics))
+       list(formulas, links, rsq, deviance))
 
 # Order the combined metrics by decreasing deviance
 R1 = R1[order(R1$Deviance, decreasing = TRUE),]
@@ -264,7 +306,7 @@ write_pdp(plot_obj = gg, index_name = "rugo", rows = 2, out_dir = out_dir)
 # NDSI_B
 (gg <- draw(model_objects$NDSI_B, scales = "fixed", residuals = TRUE, ncol = 4) & theme_bw())
 summary(model_objects$NDSI_B)
-write_pdp(plot_obj = gg, index_name = "NDSI_B", rows = 1, out_dir = out_dir)
+write_pdp(plot_obj = gg, index_name = "NDSI_B", rows = 2, out_dir = out_dir)
 
 # NDSI
 (gg <- draw(model_objects$NDSI, scales = "fixed", residuals = TRUE, ncol = 4) & theme_bw())
@@ -282,7 +324,7 @@ write_pdp(plot_obj = gg, index_name = "ADI", rows = 2, out_dir = out_dir)
 # SFM
 (gg <- draw(model_objects$sfm, scales = "fixed", residuals = TRUE, ncol = 4) & theme_bw())
 summary(model_objects$sfm)
-write_pdp(plot_obj = gg, index_name = "SFM", rows = 2, out_dir = out_dir)
+write_pdp(plot_obj = gg, index_name = "SFM", rows = 1, out_dir = out_dir)
 model_objects$sfm
 
 # BI

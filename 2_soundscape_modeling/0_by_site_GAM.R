@@ -11,6 +11,7 @@ library(ggpubr)
 # modeling libs
 library(mgcv)
 library(gratia)
+library(lmtest)
 
 # custom additional functions
 source('/paper-AcousticIndices/utility_fxs.R')
@@ -76,20 +77,14 @@ mod_df = mod_df %>%
          ARU = factor(ARU),
          logwavs = log(wavs)) 
 
-# save list of sites used in analyses
-# sites = temp_df$site
-# write.csv(data.frame(sites), 
-#           paste0(wd, 'sites_used_in_GAMs_21July22.csv'), 
-#           row.names = F)
-
 # list to store model slopes that are saved
 model_slopes = list()
 final_models = list()
 
-
-
 # Note on GAMs:
 # - every acoustic index is manually modeled using backward selection using ARU, n Recordings, ABGQI (see Supplementary Material for details) 
+# - Model selection done using LRT:
+#       - p-value according to chi-square (p < 0.05 : use the more complex model (H_a); p > 0.05 : we don't need the added complexity (H0))
 # - Final GAM fits are stored in a model list and saved as an RData object at the end of script
 # - Index GAMs are fit in alphabetical order below
 
@@ -162,8 +157,7 @@ mod2 = gam(ACI_0 ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2, rep = 500)
-remod1$aic
-mod2$aic
+lrtest(remod1, mod2)
 
 # remove Quiet (p = 0.223)
 mod3 = gam(ACI_0 ~ 
@@ -176,8 +170,7 @@ mod3 = gam(ACI_0 ~
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(mod3)
-mod2$aic
-mod3$aic
+lrtest(mod2, mod3)
 gam.check(mod3, rep = 500)
 draw(mod3, scales = "fixed") 
 appraise(mod3, method = "simulate")
@@ -263,8 +256,7 @@ remod2 = gam(ADInorm ~
            family = betar(),
            method = 'ML')
 summary(remod2)
-gam.check(remod2, rep = 500) # Okay. Some odd fit issues in resids plot but are still roughly normal. Two low QQ tail deviations
-
+gam.check(remod2, rep = 500) # Some odd fit issues in resids plot but are still roughly normal. Two low QQ tail deviations
 
 # remove logwavs (p = 0.859)
 mod3 = gam(ADInorm ~ 
@@ -278,10 +270,8 @@ mod3 = gam(ADInorm ~
            family = betar(),
            method = 'ML')
 summary(mod3)
-mod2$aic
-mod3$aic
+lrtest(remod2, mod3)
 gam.check(mod3, rep = 500)
-
 draw(mod3, scales = "fixed")
 
 # summarized slopes
@@ -344,8 +334,7 @@ mod2 = gam(AEI ~
            family = betar(),
            method = 'ML')
 summary(mod2)
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 gam.check(mod2)
 
 draw(mod2, scales = "fixed")
@@ -406,10 +395,9 @@ mod2 = gam(BI ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2)
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
-# remove logwqavs (p = 0.524)
+# remove logwavs (p = 0.524)
 mod3 = gam(BI ~ 
              ARU +
              s(Biophony, k = 5) + 
@@ -420,10 +408,8 @@ mod3 = gam(BI ~
            family = Gamma(link = "log"),
            method = 'ML')
 summary(mod3)
-mod2$aic
-mod3$aic
+lrtest(mod2, mod3)
 gam.check(mod3)
-
 draw(mod3, scales = "fixed")
 
 # check for response scale compared to raw data 
@@ -489,8 +475,7 @@ mod2 = gam(H ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2, rep = 500)
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
 
 # summarized slopes
@@ -553,8 +538,7 @@ mod2 = gam(Hs ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2) # better diagnostics - QQ appears off based only on ~2 points, low shoulders in residuals histogram
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
 pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 
@@ -615,8 +599,7 @@ mod2 = gam(Ht ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2) # residuals slightly shifted to left skew
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
 
 # Model 2
@@ -738,8 +721,6 @@ mod4 = gam(logM ~
            method = 'ML')
 summary(mod4)
 gam.check(mod4)
-mod3$aic
-mod4$aic
 
 # remove quiet (p = 0.113)
 mod5 = gam(logM ~ 
@@ -753,8 +734,7 @@ mod5 = gam(logM ~
            method = 'ML')
 summary(mod5)
 gam.check(mod5)
-mod4$aic
-mod5$aic # suggests keeping Quiet
+lrtest(mod4, mod5) # H(a): Quiet suggested to remain in model
 
 pred_plot(data_df = temp_df_remod, model_fit = mod4, index_name = "logM")
 
@@ -805,7 +785,6 @@ summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) 
 
-
 # drop geophony (p = 0.927)
 mod2 = gam(beta_NDSI ~ 
              ARU +
@@ -819,8 +798,7 @@ mod2 = gam(beta_NDSI ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2)
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
 # drop logwavs (p = 0.170)
 mod3 = gam(beta_NDSI ~ 
@@ -834,10 +812,9 @@ mod3 = gam(beta_NDSI ~
            method = 'ML')
 summary(mod3)
 gam.check(mod3)
-mod2$aic
-mod3$aic
+lrtest(mod2, mod3)
 
-draw(mod3, scales = "fixed", )
+draw(mod3, scales = "fixed")
 vis.gam(mod3, theta = 65)
 gam.vcomp(mod3)
 
@@ -901,8 +878,7 @@ mod2 = gam(NDSI_A ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2) # more extreme deviation from QQ
-mod1$aic
-mod2$aic
+lrtest(mod1, mod2)
 
 # drop logwavs (p = 0.407)
 mod3 = gam(NDSI_A ~ 
@@ -916,8 +892,7 @@ mod3 = gam(NDSI_A ~
            method = 'ML')
 summary(mod3)
 gam.check(mod3) 
-mod2$aic
-mod3$aic
+lrtest(mod2, mod3)
 
 pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
 
@@ -1019,8 +994,7 @@ mod3 = gam(normNDSI_B ~
            method = 'ML')
 summary(mod3)
 gam.check(mod3) 
-remod2$aic
-mod3$aic
+lrtest(remod2, mod3)
 
 # drop geophony (p = 0.210322)
 mod4 = gam(normNDSI_B ~ 
@@ -1034,15 +1008,14 @@ mod4 = gam(normNDSI_B ~
            method = 'ML')
 summary(mod4)
 gam.check(mod4) 
-mod3$aic
-mod4$aic
+lrtest(mod3, mod4) #H(a): retain geophony
 
-pred_plot(data_df = temp_df, model_fit = mod4, index_name = "normNDSI_B")
+pred_plot(data_df = temp_df, model_fit = mod3, index_name = "normNDSI_B")
 
 # summarized slopes
-ci = slope_summary(mod4)
+ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
-final_models[[i]] = mod4
+final_models[[i]] = mod3
 
 # Clean up
 rm(temp_df); rm(i); rm(mod1); rm(mod2); rm(mod3); rm(mod4); rm(remod2)
@@ -1115,8 +1088,7 @@ mod3 = gam(logR ~
            method = 'ML')
 summary(mod3)
 gam.check(mod3)
-mod2$aic
-mod3$aic
+lrtest(mod2, mod3)
 
 # drop logwavs (p = 0.15928)
 mod4 = gam(logR ~ 
@@ -1129,8 +1101,7 @@ mod4 = gam(logR ~
            method = 'ML')
 summary(mod4)
 gam.check(mod4)
-mod3$aic
-mod4$aic
+lrtest(mod2, mod3)
 
 pred_plot(data_df = temp_df, model_fit = mod4, index_name = 'logR')
 
@@ -1211,8 +1182,7 @@ mod2 = gam(rugo ~
            method = 'ML')
 summary(mod2) 
 gam.check(mod2)
-remod1$aic
-mod2$aic
+lrtest(remod1, mod2)
 
 pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
 
@@ -1295,8 +1265,7 @@ mod2 = gam(sfm ~
              method = 'ML')
 summary(mod2) 
 gam.check(mod2)
-remod1$aic
-mod2$aic
+lrtest(remod1, mod2)
 
 # drop geophony (p = 0.11718)
 mod3 = gam(sfm ~ 
@@ -1310,15 +1279,14 @@ mod3 = gam(sfm ~
            method = 'ML')
 summary(mod3) 
 gam.check(mod3)
-mod2$aic
-mod3$aic # recommended to keep geophony
+lrtest(mod2, mod3)
 
-pred_plot(data_df = temp_df, model_fit = mod2, index_name = i)
+pred_plot(data_df = temp_df, model_fit = mod3, index_name = i)
 
 # summarized slopes
-ci = slope_summary(mod2)
+ci = slope_summary(mod3)
 model_slopes[[i]] = cbind(index = rep(i, times = nrow(ci)), ci)
-final_models[[i]] = mod2
+final_models[[i]] = mod3
 
 # Clean up
 rm(temp_df); rm(i); rm(mod1); rm(mod2); rm(mod3); rm(remod1)
@@ -1410,8 +1378,7 @@ mod3 = gam(normZCR ~
              method = 'ML')
 summary(mod3) 
 gam.check(mod3)
-remod2$aic
-mod3$aic
+lrtest(remod2, mod3)
 
 draw(mod3, scales = "fixed")
 pred_plot(data_df = temp_df, model_fit = mod3, index_name = "normZCR")
@@ -1426,6 +1393,6 @@ rm(temp_df); rm(i); rm(mod1); rm(mod2); rm(mod3); rm(remod2);
 
 ###########################################
 ######### SAVE OBJECTS ####################
-saveRDS(final_models, file = '/models/gam_model_objects.RData')
+saveRDS(final_models, file = paste0(wd,'/models/gam_model_objects.RData'))
 saveRDS(model_slopes, file = '/models/gam_model_slopes.RData')
 
