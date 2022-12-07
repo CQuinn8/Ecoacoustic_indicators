@@ -5,11 +5,11 @@ library(tidyverse)
 library(ggpubr)
 library(mgcv)
 library(gratia)
+library(lmtest)
 
 # Lib that may help install fonts if errors occur
 # library(remotes)
 # remotes::install_version("Rttf2pt1", version = "1.3.8")
-
 library(extrafont)
 # font_import() # run once if needed
 loadfonts(device = "win")
@@ -242,7 +242,6 @@ remod1 <- gam(ACI_0 ~
 summary(remod1)
 par(mfrow = c(2, 2))
 gam.check(remod1, rep = 500) # good diagnostics now
-AIC(mod1, remod1)
 
 # remove logwavs
 mod2 <- gam(ACI_0 ~
@@ -256,7 +255,7 @@ mod2 <- gam(ACI_0 ~
            method = 'ML')
 summary(mod2)
 gam.check(mod2, rep = 500)
-AIC(remod1, mod2)
+lrtest(remod1, mod2)
 
 # remove Quiet
 mod3 <- gam(ACI_0 ~
@@ -268,9 +267,8 @@ mod3 <- gam(ACI_0 ~
            family = Gamma(link = 'log'),
            method = 'ML')
 summary(mod3)
-mod2$aic - mod3$aic # Quiet suggested to stay in
+lrtest(mod2, mod3) # Quiet suggested to stay in
 gam.check(mod3, rep = 500)
-
 
 # visualize partial effects for final model (MOD2)
 appraise(mod2, method = "simulate")
@@ -355,7 +353,7 @@ ggsave(filename = 'figure_4.png',
 ###########################################
 # Compare with and without Interference ACI
 # Read in ACI GAM object with Interference included
-aci_with_int <- readRDS(file = '/models/gam_model_objectsmean_fx.RData')$ACI
+aci_with_int <- readRDS(file = '/models/gam_model_objects.RData')$ACI
 draw(aci_with_int, scales = "fixed")
 summary(aci_with_int)
 
@@ -366,7 +364,7 @@ model_slopes <- cbind(index = rep(i, times = nrow(ci)), ci)
 # visualize predictions vs observed
 pred_plot(data_df = temp_df, model_fit = mod2, index_name = "ACI_0")
 
-# use middle 99% of x values to plot slopes to avoid extreme tail behavior
+# use middle 99% of x values to plot slopes
 abgqi_limits <- mod_df %>%
   select(Anthropophony, Biophony, Geophony, Quiet) %>%
   gather(variable, value) %>%
@@ -383,7 +381,7 @@ slope_df_filtered <- model_slopes %>%
 
 
 # PROCESS: Interference model and data
-model_slopes_int <- readRDS(file = paste0(wd, '/models/gam_model_slopesmean_fx.RData'))$ACI
+model_slopes_int <- readRDS(file = paste0(wd, '/models/gam_model_slopes.RData'))$ACI
 abgqi_df_int <- fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
@@ -414,8 +412,8 @@ slope_df_filtered_int <- model_slopes_int %>%
 
 # COMPARE MODELS
 # Plot int and no-int slope boxplots
-slope_df_filtered$Interference <- factor("No Interference")
-slope_df_filtered_int$Interference <- factor("Interference")
+slope_df_filtered$Interference <- factor("A. No Interference")
+slope_df_filtered_int$Interference <- factor("B. With Interference")
 slope_df_filtered_combined <- rbind(slope_df_filtered, slope_df_filtered_int)
 temp_min <- floor(min(slope_df_filtered_combined$lower))
 temp_max <- ceiling(max(slope_df_filtered_combined$upper))
@@ -428,12 +426,12 @@ temp_max <- ceiling(max(slope_df_filtered_combined$upper))
                    position = position_dodge(preserve = "single"),
                    notch = TRUE) +
       geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-      ylim(c(temp_min, temp_max)) + # min max in slope df
-      ylab("Slope") +
+      ylab("ACI partial effect slope") +
       xlab("") +
       scale_fill_manual(values = c('#B8B8B8', '#FFFFFF'), name = "") +
-      coord_flip() +
       theme_bw() +
+      facet_wrap(. ~ Interference, scales = "free_x") +
+      coord_flip() +
       theme(legend.position = 'bottom',
             text = element_text(size = 16, family = 'Calibri'),
             axis.text.y = element_text(angle = 45, vjust = -0.5)))
@@ -443,5 +441,5 @@ temp_max <- ceiling(max(slope_df_filtered_combined$upper))
 ggsave(filename = 'figure_3.png', 
        plot = gg, 
        device = 'png',
-       path = '/figures/',
-       width = 4.5, height = 6, dpi = 500)
+       path =  'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
+       width = 7, height = 4, dpi = 500)

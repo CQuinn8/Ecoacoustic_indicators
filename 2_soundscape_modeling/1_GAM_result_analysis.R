@@ -105,6 +105,7 @@ mod_df %>%
   dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
   round(6) * 100
 
+
 # Visual number of sites by year
 mod_df %>%
   mutate(YY = substr(site, 10, 11)) %>%
