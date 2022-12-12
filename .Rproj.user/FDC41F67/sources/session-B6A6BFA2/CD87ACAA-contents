@@ -21,3 +21,6 @@ th_df = read.csv(paste0('/scratch/cq73/projects/S2L/abg_cnn/results/CNN_inferenc
                         target_label, 
                         "_sigmoid_model_acc_metrics.csv"))
 error_log <- paste0('/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/ABGQI_inference/error_logs.txt')
+
+# /1_data_processing/1a_abgqi_aggregation.R
+results_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/ABGQI_inference/'

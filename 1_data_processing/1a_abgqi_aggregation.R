@@ -1,10 +1,9 @@
 # Purpose : Use site csvs of all melspec ABGQI preds to generate by-min, by-hour, and by-site averages
-ll = '/projects/tropics/users/cquinn/R_400/'
-.libPaths(c( .libPaths(), ll))
+#  Note: only by-site data is saved
 library(data.table)
 library(dplyr)
 
-results_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/ABGQI_inference/'
+wd = '/results/ABGQI_inference/' # where do the ABGQI site csvs live
 
 # SITES WITH ANOMALOUS BEHAVIOR 
 error_sites = c('s2lam012_190506.csv','s2lam012_190529.csv','s2lam012_190605.csv',
@@ -19,7 +18,7 @@ error_sites = c('s2lam012_190506.csv','s2lam012_190529.csv','s2lam012_190605.csv
 #######################################
 # 1min by-site Average
 #######################################
-site_csvs = list.files(paste0(results_dir,"by_site"), full.names = F, pattern = "*.csv")
+site_csvs = list.files(paste0(wd, "by_site"), full.names = F, pattern = "*.csv")
 
 # Remove any of the above error sites
 site_csvs = site_csvs[!site_csvs %in% error_sites]
@@ -45,7 +44,7 @@ for(i in 1:length(site_csvs)){
   print(paste0(i," : ", temp_site_name))
   
   #read in csv
-  df = read.csv(paste0(results_dir,"by_site/",temp_site))
+  df = read.csv(paste0(wd, "by_site/", temp_site))
   n_wavs = length(unique(df$wav)) # number of recordings
     
   # force a sixth class to positive if no other labels are present (aka to unidentified)
@@ -64,7 +63,7 @@ for(i in 1:length(site_csvs)){
   df$MM = substr(df$wav, 22, 23)
   df$HH = substr(df$wav, 28, 29)
   df_by_hour_all = df %>%
-    select(-c(wav, mfcc))  
+    select(-c(wav, mfcc))
   
   # get column-wise statistics on integer columns only (e.g. binarized)
   temp_hr_all = df_by_hour_all %>%
@@ -76,9 +75,9 @@ for(i in 1:length(site_csvs)){
     group_by(MM,DD,HH) %>%
     dplyr::summarise(n = n() / 30)
   
-  # join count and stats 
+  # join count and stats
   temp_hr_avg_all = merge(x = temp_hr_all, y = n_all, by = c('MM','DD','HH'))
-    
+  
   # store site name and stats
   by_hour_all_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_hr_avg_all))
   
@@ -90,20 +89,20 @@ for(i in 1:length(site_csvs)){
   HH_temp = lapply(HH_temp, function(x) x[length(x)]) # pull out final chars ('HH_mm.csv')
   HH_temp = as.integer(lapply(HH_temp, function(x) strsplit(x, "-")[[1]][1])) # pull out HH
   df_by_hour$HH = HH_temp
-
+  
   # get column-wise statistics on integer columns only (e.g. binarized)
   temp_hr = df_by_hour %>%
     group_by(HH) %>%
     dplyr::summarise(across(where(is.integer), mean_var))
-
+  
   # count n wavs per hour
   n = df_by_hour %>%
     group_by(HH) %>%
     dplyr::summarise(n = n()/30)
-
+  
   # join count and stats
   temp_hr_avg = merge(x = temp_hr, y = n, by = 'HH')
-
+  
   # store site name and stats
   by_hour_list[[i]] = as.data.frame(c("site" = temp_site_name, temp_hr_avg))
 
@@ -146,7 +145,7 @@ all_site_by_hour_all_df = do.call("rbind", by_hour_all_list)
 all_site_dawn_chorus_df = do.call("rbind", dawn_chorus_list)
 
 # save csv
-write.csv(all_site_avg_df, file = paste0(results_dir, "/averages/site_avg_ABGQI.csv"), row.names = FALSE)
-write.csv(all_site_by_hour_df, file = paste0(results_dir, "/averages/site_by_hour_ABGQI.csv"), row.names = FALSE)
-write.csv(all_site_by_hour_all_df, file = paste0(results_dir, "/averages/site_by_hour_all_ABGQI.csv"), row.names = FALSE)
-write.csv(all_site_dawn_chorus_df, file = paste0(results_dir, "/averages/site_ABGQI_dawn_4am-12pm.csv"), row.names = FALSE)
+write.csv(all_site_avg_df, file = "/data/site_avg_ABGQI.csv", row.names = FALSE)
+# write.csv(all_site_by_hour_df, file = "/data/site_by_hour_ABGQI.csv", row.names = FALSE)
+# write.csv(all_site_by_hour_all_df, file = "/data/site_by_hour_all_ABGQI.csv", row.names = FALSE)
+write.csv(all_site_dawn_chorus_df, file = "/data/site_ABGQI_dawn_4am-12pm.csv", row.names = FALSE)
