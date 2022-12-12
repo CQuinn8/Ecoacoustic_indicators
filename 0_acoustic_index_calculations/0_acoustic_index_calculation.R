@@ -8,12 +8,13 @@
 # Use this section on monsoon
 # Load libraries
 ll = '/home/cq73/R/4_audio/'
-library(seewave, lib.loc=ll)
-library(soundecology, lib.loc=ll)
-library(tuneR, lib.loc=ll)
-library(dplyr, lib.loc=ll)
-library(tidyr, lib.loc=ll)
-library(reshape2, lib.loc=ll)
+.libPaths(c( .libPaths(), ll))
+library(seewave)
+library(soundecology)
+library(tuneR)
+library(dplyr)
+library(tidyr)
+library(reshape2)
 
 # Bring in SLURM parameters
 args <- commandArgs(TRUE)
@@ -171,4 +172,3 @@ for(i in 1:n){
 		  })  
 	}
 }
-

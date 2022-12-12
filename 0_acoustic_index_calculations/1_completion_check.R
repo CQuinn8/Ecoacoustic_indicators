@@ -1,6 +1,6 @@
-wd_pre = '/scratch/cq73/projects/S2L/distributionData/' # 2017-2019 data
-wd_post = '/scratch/cq73/projects/S2L/audio/'           # 2020-2021 data
-results_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices/'
+wd_pre = ''  # 2017-2019 data
+wd_post = '' # 2020-2021 data
+results_dir = '/results/acoustic_indices/' # located in Zenodo repository
 
 
 # check for wav completion
@@ -37,4 +37,4 @@ length(post_wavs_toDo) == length(post_toDo) # check we got all wavs
 # write toDo csv
 all_wavs = c(pre_wavs_toDo, post_wavs_toDo)
 toDo_wavs = data.frame('wavs' = all_wavs)
-write.csv(toDo_wavs, '/projects/tropics/users/cquinn/s2l/code/paper-AcousticIndices/acoustic_indices/toDo_wavs.csv', row.names = FALSE)
+write.csv(toDo_wavs, '/toDo_wavs.csv', row.names = FALSE) # csv summarizing the full path wav files to complete acoustic index calculations

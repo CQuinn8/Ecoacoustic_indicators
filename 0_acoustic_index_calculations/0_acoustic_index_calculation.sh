@@ -18,22 +18,23 @@
 # ENTER SETUP SCRIPT
 # - SLURM -
 #SBATCH --time=00:02:00
-#SBATCH --output='/scratch/cq73/projects/S2L/acoustic_indices/code/calculations.out'
+#SBATCH --output='/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/calculations.out'
 
 echo "Entering first slurm script"
 # --- SLURM Settings ---
 arrayLim=2000 		# how many array jobs to have at once
-files_per_task=50 	# 50; how large each job should be, number of files
-timeReq="00:18:00"  # 18:00
+files_per_task=1 	# 50; how large each job should be, number of files
+timeReq="00:05:00"  # 18:00
 memoryReq="5GB"
 
 # where output, first .sh script will be written to
-script_dir='/projects/tropics/users/cquinn/s2l/code/paper-AcousticIndices/acoustic_indices/'
+script_dir='/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/'
 
 # --- DATA & RESULT DIR Settings ---
-results_dir='/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices/'
-num_files=163
-toDo_csv="/projects/tropics/users/cquinn/s2l/code/paper-AcousticIndices/acoustic_indices/toDo_wavs.csv"
+#results_dir='/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices/'
+results_dir='/projects/tropics/users/cquinn/s2l/S2L_RA_work/acoustic_indices/wavs/'
+num_files=36
+toDo_csv="/projects/tropics/users/cquinn/s2l/S2L_RA_work/acoustic_indices/toDo_wavs.csv"
 
 # --- Data preprocessing ---
 date_time=`date +%Y%m%d_%H%M%S`
@@ -85,7 +86,7 @@ module load R
 echo
 echo "---------Entering Rscript---------"
 # - R SCRIPT -
-Rscript /projects/tropics/users/cquinn/s2l/code/paper-AcousticIndices/acoustic_indices/acoustic_index_calculation.R \$SLURM_ARRAY_TASK_ID $files_per_task $results_dir $toDo_csv
+Rscript /projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/0_acoustic_index_calculation.R \$SLURM_ARRAY_TASK_ID $files_per_task $results_dir $toDo_csv
 
 # - ENDING -
 echo "Ended at:"

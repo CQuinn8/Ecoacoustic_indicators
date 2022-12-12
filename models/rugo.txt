@@ -25,4 +25,3 @@ Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’
 
 R-sq.(adj) =  0.665   Deviance explained = 68.8%
 -ML = -3408.2  Scale est. = 1         n = 1194
-[1] 14

@@ -14,14 +14,12 @@ library(gratia)
 library(lmtest)
 
 # custom additional functions
-source('/paper-AcousticIndices/utility_fxs.R')
+source('utility_fxs.R')
 
 ###########################################
 ####### read in data and data prep ########
-wd = '/paper-AcousticIndices/results/'
-
 # Read in ABGQI classified site average data and organize
-abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+abgqi_df = fread('data/site_avg_ABGQI.csv') %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
@@ -30,7 +28,7 @@ abgqi_df = fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
          Quiet = Quiet_mean, Interference = Interference_mean)
   
 # Site average acoustic index csv
-indices_df = fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
+indices_df = fread(paste0(wd, 'data/site_avg_acoustic_indices.csv'))
 
 # Annual summary
 abgqi_df$YY = substr(abgqi_df$site, 10, 11)
@@ -49,14 +47,14 @@ abgqi_df = abgqi_df %>%
   filter(wavs >= (144 * 2.5)) # rm 44 sites
 
 # sites with static
-# s2lam050_190411, s2lam049_210501 : a lot of static but still has other signal
-error_sites = read.csv('/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites = read.csv('data/identified_problem_sites_witherrors.csv')
 error_sites = paste0(error_sites$SiteID, collapse = '|')
-abgqi_df_no_error = abgqi_df[!grepl(error_sites, abgqi_df$site),] # 7 sites dropped after filter above
+mod_df = abgqi_df[!grepl(error_sites, abgqi_df$site),] # 7 sites dropped after filter above
 
-# Number of minutes in model data
-mod_df = abgqi_df_no_error
+# Number of minutes and sites in model data
 sum(mod_df$wavs) #726801
+mean(mod_df$wavs)
+sd(mod_df$wavs)
 
 # visualize recordings against acoustic measures
 temp_df = merge(x = indices_df, y = mod_df) 
@@ -82,7 +80,7 @@ model_slopes = list()
 final_models = list()
 
 # Note on GAMs:
-# - every acoustic index is manually modeled using backward selection using ARU, n Recordings, ABGQI (see Supplementary Material for details) 
+# - every acoustic index is manually modeled using backward selection with ARU, n Recordings, ABGQI (see Supplementary Material for details) 
 # - Model selection done using LRT:
 #       - p-value according to chi-square (p < 0.05 : use the more complex model (H_a); p > 0.05 : we don't need the added complexity (H0))
 # - Final GAM fits are stored in a model list and saved as an RData object at the end of script
@@ -505,9 +503,6 @@ ggplot(temp_df, aes(x = Hs, fill = ARU)) +
   geom_histogram()
 summary(temp_df$Hs)
 
-# add transformed 
-# NA
-
 # fit a model bound 0-1
 mod1 = gam(Hs ~ 
              ARU +
@@ -523,7 +518,6 @@ mod1 = gam(Hs ~
 summary(mod1)
 par(mfrow = c(2, 2))
 gam.check(mod1) # QQ plot has lower tail issues but otherwise good
-
 
 # drop logwavs (p=0.866)
 mod2 = gam(Hs ~ 
@@ -566,9 +560,6 @@ temp_df %>%
 ggplot(temp_df, aes(x = Ht, fill = ARU)) +
   geom_histogram()
 summary(temp_df$Ht)
-
-# add transformed 
-# NA
 
 # fit a model
 mod1 = gam(Ht ~ 
@@ -766,9 +757,6 @@ hist(temp_df$NDSI)
 temp_df$beta_NDSI = (temp_df$NDSI + 1)/2
 hist(temp_df$beta_NDSI)
 
-# Outliers
-# Visual inspection and model diagnositcs - no gross outliers that cause alarm
-
 # start with full model under beta distribution
 mod1 = gam(beta_NDSI ~ 
              ARU +
@@ -847,8 +835,6 @@ ggplot(temp_df, aes(x = NDSI_A, fill = ARU)) +
   geom_histogram()
 summary(temp_df$NDSI_A)
 
-# No extreme values in NDSI_A
-
 # fit a model
 mod1 = gam(NDSI_A ~ 
              ARU +
@@ -921,8 +907,6 @@ temp_df %>%
 ggplot(temp_df, aes(x = NDSI_B, fill = ARU)) +
   geom_histogram()
 summary(temp_df$NDSI_B)
-
-# No extreme values in NDSI_B
 
 # transforms
 temp_df$normNDSI_B = min_max_norm(temp_df$NDSI_B)
@@ -1021,7 +1005,7 @@ final_models[[i]] = mod3
 rm(temp_df); rm(i); rm(mod1); rm(mod2); rm(mod3); rm(mod4); rm(remod2)
 
 ###########################################
-################# R #######################
+################# RN ######################
 i = "R"
 temp_y = data.frame(site = indices_df$site, R = indices_df[[i]])
 temp_df = merge(x = temp_y, y = mod_df) 
@@ -1038,8 +1022,8 @@ ggplot(temp_df, aes(x = R, fill = ARU)) +
   geom_histogram()
 summary(temp_df$R) # positive continuous
 
-# A few high, extreme values in R
-# 223 (s2lam021_200710), 202 (s2lam019_200710), 365 (s2lam036_200710) - no discernible patterns
+# A few high, extreme values in RN
+# s2lam021_200710, s2lam019_200710, s2lam036_200710 - no discernible patterns
 
 # add transformed 
 temp_df$logR = log(temp_df$R)
@@ -1060,7 +1044,7 @@ mod1 = gam(R ~
            method = 'ML')
 summary(mod1) 
 par(mfrow = c(2, 2))
-gam.check(mod1) # OKay approximation, some QQ tail deviations
+gam.check(mod1) # Okay approximation, some QQ tail deviations
 
 # try normal with log transform
 mod2 = gam(logR ~ 
@@ -1311,8 +1295,6 @@ summary(temp_df$zcr_mean) # positive continuous or [0-1]
 
 temp_df$normZCR = min_max_norm(temp_df$zcr_mean)
 
-# No extreme values
-
 # fit a postive model
 mod1 = gam(zcr_mean ~ 
              ARU +
@@ -1393,6 +1375,6 @@ rm(temp_df); rm(i); rm(mod1); rm(mod2); rm(mod3); rm(remod2);
 
 ###########################################
 ######### SAVE OBJECTS ####################
-saveRDS(final_models, file = paste0(wd,'/models/gam_model_objects.RData'))
+saveRDS(final_models, file = '/models/gam_model_objects.RData')
 saveRDS(model_slopes, file = '/models/gam_model_slopes.RData')
 

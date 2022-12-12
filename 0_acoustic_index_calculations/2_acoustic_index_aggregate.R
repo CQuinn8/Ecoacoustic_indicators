@@ -2,14 +2,13 @@
 # created 27Oct2020
 # Colin Quinn
 
-ll = '/projects/tropics/users/cquinn/R_400/'
-library(data.table, lib.loc = ll)
-library(tidyverse, lib.loc = ll)
+library(data.table)
+library(tidyverse)
 
-out_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices_aggregation/by_site/'
+out_dir = '/results/acoustic_indices_aggregation/by_site/' # directory that will hold by-site csvs
 
 # directory with acoustic index csv results
-ai_dir = "/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices_wavs/"
+ai_dir = "/results/acoustic_indices_wavs/" # location of by-wav acoustic index csvs from calculation script
 ai_files = list.files(ai_dir, pattern = "\\.csv$")
 ai_files = data.frame(wavs = ai_files)
 

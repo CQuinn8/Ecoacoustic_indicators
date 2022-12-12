@@ -1,14 +1,16 @@
 # Purpose : (1) Get unique S2L site names and (2) aggregate CNN inference
 # Relies on data calculated and logic in 10.1016/j.ecolind.2022.108831
-ll = '/projects/tropics/users/cquinn/R_400/'
-.libPaths(c( .libPaths(), ll))
+# Products cannot be derived without above data repository (contact cq73@nau for questions to implement)
+
+# specify non-base library env (HPC)
+# ll = '/projects/tropics/users/cquinn/R_400/'
+# .libPaths(c( .libPaths(), ll))
 library(data.table)
 library(dplyr)
 
-
 f = "075" # threshold level 
-results_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/ABGQI_inference/'
-inference_dir = '/projects/tropics/users/cquinn/s2l/paper-ABGQI_classification/results/cnn_inference_nonXC/'
+results_dir = '/results/ABGQI_inference/' # output of predictions/ this script
+inference_dir = '/ABGQI_classification/results/cnn_inference/' # where ABGQI predictions live (1 csv per wav)
 inference_csvs = list.files(paste0(inference_dir), pattern = "*.csv", full.names = FALSE)
 
 # retrieve all unique site names
@@ -18,7 +20,7 @@ date = lapply(date, function(x) strsplit(x, "-")[[1]][1])               # one si
 site_names = unique(paste0(rec_name,"_",date))
 
 # get list of files used in ABG CNN training/Val/Test
-abg_df = read.csv('/projects/tropics/users/cquinn/s2l/paper-ABGQI_classification/data/cnn_training/verfied_ROIs_thru_5460.csv')
+abg_df = read.csv('/data/cnn_training/verfied_ROIs.csv')
 abg_wavs = unique(abg_df$File_name)
 
 # create thresholded class values for ABGQI*
@@ -26,11 +28,9 @@ labels = c("Anthro","Bio","Geo","Quiet","Interference")
 label_threshes = list()
 for(target_label in labels){
   print(target_label)
+  
   # read in optimal threshold based on model optimization
-  th_df = read.csv(paste0('/scratch/cq73/projects/S2L/abg_cnn/results/CNN_inference/local_PC_results/IMGNET_S2L_withFreesound-local/performance_fscore_', 
-                          f, "/", 
-                          target_label, 
-                          "_sigmoid_model_acc_metrics.csv"))
+  th_df = read.csv(paste0('/CNN_fscore_', f, "/", target_label, "_sigmoid_model_acc_metrics.csv"))
   th = subset(x = th_df, X == "th")$test
   
   label_threshes[target_label] = th
@@ -38,7 +38,7 @@ for(target_label in labels){
 
 
 # iterate through every site's wavs (using only non-overlapping melspec preds (10March21))
-error_log <- paste0('/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/ABGQI_inference/error_logs.txt')
+error_log <- paste0('error_logs.txt')
 for(s in 1:length(site_names)){
   temp_site = site_names[s]
   temp_out_path =  paste0(results_dir,"by_site/",temp_site,".csv")
@@ -52,7 +52,7 @@ for(s in 1:length(site_names)){
     # site specific wavs
     site_wavs = inference_csvs[inference_csvs %like% temp_site]
     
-    # check and remove wavs in ABG training step (n = 2367 total)
+    # check and remove wavs in ABG training step (n = 2,367 total)
     site_wavs = site_wavs[!site_wavs %in% abg_wavs]
     
     # iterate through each wav to threshold probabilities
