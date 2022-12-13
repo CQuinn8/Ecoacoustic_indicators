@@ -1,4 +1,3 @@
-
 # data libs
 library(data.table)
 library(dplyr)
@@ -11,23 +10,20 @@ library(mgcv)
 library(gratia)
 library(lmtest)
 
-source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
+source('utility_fxs.R')
 
 ###################################
 # DATA IMPORT
-wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
+wd = 'zenodo/'
 
-# bird species pres/abs by site
-bird_df = fread('G:/Shared drives/NASA  S2L/Paper Development/Sonoma SDM update/bird_cnn_predictions/sonoma_s2l_predictions_ROImaxF05_220905_summarized.csv')
+# bird species pres/abs by site 
+bird_df = fread('data/sonoma_s2l_predictions_ROImaxF05_220905_summarized.csv')
 
 # reduce sites used in ABGQI analyses
-sites = fread("//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/sites_used_in_GAMs_21July22.csv")
-
-# LULC table
-lulc_df = fread(paste0(wd,'data/sonoma_s2l_locations_landcover_220113.csv'))
+sites = fread("data/sites_used_in_GAMs.csv")
 
 # ABGQI
-abgqi_df = fread(paste0(wd, 'results/ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+abgqi_df = fread('data/site_avg_ABGQI.csv') %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
@@ -36,15 +32,15 @@ abgqi_df = fread(paste0(wd, 'results/ABGQI_inference/averages/site_avg_ABGQI.csv
          Quiet = Quiet_mean, Interference = Interference_mean)
 
 # Acoustic Indices
-indices_df = fread(paste0(wd, 'results/acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
+indices_df = fread('data/site_avg_acoustic_indices.csv')
 
 # sites with static
-error_sites = read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites = read.csv('data/identified_problem_sites_witherrors.csv')
 error_sites = paste0(error_sites$SiteID, collapse = '|')
 
 ###################################
 # Prep data and summarize
-# subsetting robust ABGQI sites results in 1226 -> 1185 sites
+# subset ABGQI sites results in 1226 -> 1185 sites
 bird_df = bird_df[bird_df$site %in% sites$sites, ]
 
 # count number of occ per spp
@@ -104,24 +100,6 @@ rate_birds <- bird_df_nwavs %>%
   summarise(across(where(is.numeric), mean))
 
 # write.csv(rate_birds, row.names = F, paste0(wd,'results/modeling/bird_rate_24hr.csv'))
-# # Subset LULC to target sites and determine Max LULC ID
-# lulc_df = lulc_df[lulc_df$SiteID %in% mod_df$site,] %>%       # 1195 (13 non-unique duplicates)
-#   distinct(SiteID, .keep_all = TRUE) %>%                      # select dinstinct rows 1182 sites
-#   select(SiteID, 'Oak-Hardwood Forest', Grassland, Shrubland, # select the LULC cols and SiteID
-#          Riparian, 'Conifer Forest', 'Agriculture-Barren',
-#          Wetland, Urban) %>% # TODO: V19
-#   gather(LULC, pct, -SiteID) %>%                              # gather DF into LULC, PCT, and SiteName
-#   group_by(SiteID) %>%                                        # for each Site
-#   slice(which.max(pct)) %>%                                   # select top LULC
-#   select(-pct)
-
-# # Combine ABGQ, Rich, LULC
-# mod_df = lulc_df %>%
-#   inner_join(mod_df, by = c("SiteID" = 'site')) %>%
-#   ungroup() %>%
-#   mutate(ARU = factor(ARU),
-#          logwavs = log(wavs)) %>%
-#   select(-SiteID)
 
 #############################################
 # 24hr: BIOPHONY ~ SPP RICH 
@@ -175,37 +153,6 @@ mod_df$Biophony_pred = predict(modBio1, newdata = mod_df, type = "response")^3
     theme_bw() +
     guides(colour = guide_legend(title = 'Observed values')) +
     theme(legend.position = "top"))
-
-ggsave(filename = 'supplement_Bio-BSR_GAM.png', 
-       plot = gg, 
-       device = 'png',
-       path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
-       width = 6, height = 4, dpi = 500)
-
-# # grouped by LULC
-# mod_df_remod %>%
-#   select(site_richness, Biophony, Biophony_pred, ARU, LULC) %>%
-#   gather(covariate, value, -Biophony, -Biophony_pred, -ARU, -LULC) %>%
-#   ggplot(aes(x = value, y = Biophony_pred)) +
-#   geom_point(aes(x = value, y = Biophony, colour = LULC), alpha = 0.3, size = 2,
-#              position = position_jitter(w = 0.1, h = 0)) +
-#   #geom_point(alpha = 0.1) +
-#   # geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
-#   geom_smooth(method = 'glm', aes(colour = LULC), alpha = 0.4, se = FALSE) +
-#   ggtitle("Biophony: black = predicted values") +
-#   labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
-#   theme_bw() +
-#   scale_colour_brewer(palette = "Set1")
-# 
-# pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
-# 
-# mod_df_remod %>%
-#   select(LULC, site_richness) %>%
-#   group_by(LULC) %>%
-#   summarise(mean(site_richness),
-#             sd(site_richness),
-#             n(site_richness))
-# pred_plot(data_df = mod_df_remod, model_fit = remodBio1, index_name = "cuberootBiophony")
 
 #############################################
 # 24hr: SPP RICH ~ ACOUSTIC INDICES
@@ -413,7 +360,6 @@ mod8 = gam(site_richness ~
            method = 'ML')
 summary(mod8)
 lrtest(mod7, mod8) # keep zcr - mod7 is final
-draw(mod8, scales = 'fixed')
 
 # final model
 summary(mod7)
@@ -422,16 +368,15 @@ gam.check(mod7, type = 'response')
 draw(mod7, scales = 'fixed', residuals = TRUE)
 pred_plot(data_df = mod_df_indices, model_fit = mod7, index_name = 'site_richness')
 
-# check concurvity - NDSI, NDSI_A, NDSI_B have issues
+# check concurvity - NDSI, NDSI_A, NDSI_B
 # NDSI only: sign changes from negative to positive
 # NDSI_B only: remains relatively stable
 # NDSI_A only: remains relatively stable
 concurvity(mod7, full = TRUE)
-c <- concurvity(mod7, full = FALSE)$worst
+c <- concurvity(mod7, full = FALSE)$worst 
 
 # RMSE
 sqrt(mean((mod_df_indices$site_richness - mod7$fitted.values)^2))
-
 sqrt(mean((mod_df_indices$site_richness - mod7$fitted.values)^2))/ 
   diff(range(mod_df_indices$site_richness))
 
@@ -511,7 +456,7 @@ bio_index_df %>%
   select(-site, -logwavs, -Anthropophony, -Geophony, -Quiet, -Interference, 
          -sqrtBiophony, -cuberootBiophony, -logBiophony, -YYYY) %>%
   gather(index, value, -ARU, -site_richness) %>%
-  ggplot(aes(x = value, y = site_richness, colour = ARU)) +
+  ggplot(aes(x = value, y = site_richness)) +
     geom_point(alpha = 0.1) +
     geom_smooth(method = "gam") +
     facet_wrap(~index, scales = "free")

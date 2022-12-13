@@ -1,0 +1,7 @@
+acoustic_indices/0_acoustic_index_calculations/error_log_toDo.txt
+acoustic_indices/0_acoustic_index_calculations/logs/*
+acoustic_indices/0_acoustic_index_calculations/sbatch/*
+acoustic_indices/0_acoustic_index_calculations/toDo_wavs.csv
+acoustic_indices/2_soundscape_modeling/archive/
+paired_ARUs/archive/*
+acoustic_indices/.Rproj*

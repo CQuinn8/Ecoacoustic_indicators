@@ -11,28 +11,26 @@ library(mgcv)
 library(gratia)
 library(lmtest)
 
-source('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/utility_fxs.R')
+source('utility_fxs.R')
 
 ###################################
 # DATA IMPORT
-wd = '//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/'
-
 # bird species pres/abs by site
-bird_df = fread('G:/Shared drives/NASA  S2L/Paper Development/Sonoma SDM update/bird_cnn_predictions/sonoma_s2l_predictions_ROImaxF05_220905_summarized-dawn_4am-12pm.csv')
+bird_df = fread('data/sonoma_s2l_predictions_ROImaxF05_220905_summarized-dawn_4am-12pm.csv')
 
 # reduce sites used in ABGQI analyses
-sites = fread("//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/results/sites_used_in_GAMs_21July22.csv")
+sites = fread("data/sites_used_in_GAMs.csv")
 
 # ABGQI
-abgqi_df = fread(paste0(wd, 'results/ABGQI_inference/averages/site_ABGQI_dawn_4am-12pm.csv')) %>%
+abgqi_df = fread('data/site_ABGQI_dawn_4am-12pm.csv') %>%
   mutate(ARU = substr(site, 4,5)) %>%
   select(-Unidentified)
 
 # Acoustic Indices
-indices_df = fread(paste0(wd, 'results/acoustic_indices_aggregation/averages/site_acoustic_indices_dawn_4am-12pm.csv'))
+indices_df = fread('data/site_acoustic_indices_dawn_4am-12pm.csv')
 
 # sites with static
-error_sites = read.csv('//shares.hpc.nau.edu/cirrus/projects/tropics/users/cquinn/s2l/paper1-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites = read.csv('data/identified_problem_sites_witherrors.csv')
 error_sites = paste0(error_sites$SiteID, collapse = '|')
 
 ###################################
@@ -65,37 +63,15 @@ mod_df = abgqi_df_no_error %>%
   left_join(y = site_spp_rich, by = 'site') %>%
   drop_na()
 
+# Stats on species richness and biophony
 mean(mod_df$site_richness)
 sd(mod_df$site_richness)
+mean(mod_df$Biophony) # 0.3501
+sd(mod_df$Biophony) # 0.1918
 
 mod_df = mod_df %>%
   mutate(ARU = factor(ARU),
          logwavs = log(wavs)) 
-
-mean(mod_df$Biophony) # 0.3501
-sd(mod_df$Biophony) # 0.1918
-
-# rate of bird presences 
-bird_df_nwavs <- abgqi_df_no_error %>%
-  select(site, wavs) %>%
-  left_join(bird_df, by = 'site') %>%
-  drop_na()
-
-rate_birds <- bird_df_nwavs %>%
-  mutate_at(vars(-site,-wavs), funs(. / wavs)) %>%
-  summarise(across(where(is.numeric), mean))
-
-# write.csv(rate_birds, row.names = F, paste0(wd,'results/modeling/bird_rate_dawn.csv'))
-
-bird_rate_24hr <- read.csv(paste0(wd,'results/modeling/bird_rate_24hr.csv'))
-bird_rate_24hr$dataset <- "24hr"
-rate_birds$dataset <- "dawn"
-
-combined_bird_rate <- bird_rate_24hr %>%
-  bind_rows(rate_birds)
-
-# write.csv(combined_bird_r
-#           ate, row.names = F, paste0(wd,'results/modeling/bird_rate_combined.csv'))
 
 #############################################
 # Dawn: BIOPHONY ~ SPP RICH 
@@ -331,7 +307,7 @@ draw(mod5, scales = 'fixed', residuals = TRUE)
 pred_plot(data_df = mod_df_indices, model_fit = mod5, index_name = 'site_richness')
 
 # check concurvity
-# ACI and Ht; AEI and Hs; NDSI, NDSI_A, NDSI_B; Hs and zcr
+# NDSI, NDSI_A, NDSI_B; Hs and zcr
 concurvity(mod5, full = TRUE)
 c <- concurvity(mod5, full = FALSE)$worst
 
@@ -634,7 +610,7 @@ mod10 = gam(site_richness ~
 summary(mod10)
 lrtest(mod9, mod10)
 gam.check(mod10, type = 'response')
-
+plot(mod10)
 draw(mod10, scales = 'fixed', residuals = TRUE)
 pred_plot(data_df = bio_index_df, model_fit = mod10, index_name = 'site_richness')
 
@@ -680,19 +656,16 @@ temp_max = ceiling(max(slope_df_filtered$upper))
     theme_bw())
 
 
-ggsave(filename = 'figure_6-needs_update.png', 
+ggsave(filename = 'supplementary_figure-Eq5_morning_GAM_PDP.png', 
        plot = gg, 
        device = 'png',
-       path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
+       path = 'figures/',
        width = 8, height = 8, dpi = 500)
 
 # Predicted vs Observed plot
-eq <- "BirdSppRich ~ logwavs + s(Biophony, k = 5) + s(AEI, k = 5) + s(NDSI-\u03B1, k = 5) + 
-          s(NDSI-\u03B2, k = 5) + s(BI, k = 5) + s(H, k = 5) + s(M, k = 5) + s(ZCR, k = 5)"
 dev <- "Deviance = 60.2%"
 bio_index_df$y_pred = predict(mod10, newdata = bio_index_df, type = "response")
 (gg <- ggplot(bio_index_df, aes(x = site_richness, y = y_pred)) +
-    # geom_point(alpha = 0.3) +
     geom_hex(bins = 25, aes(fill = ..count..)) +
     geom_abline(slope = 1, intercept = 0, colour = "red") +
     ylab("Predicted Richness") +
@@ -702,10 +675,9 @@ bio_index_df$y_pred = predict(mod10, newdata = bio_index_df, type = "response")
     theme(text = element_text(size = 16, family = 'Calibri')) +
     annotate("text", x = 10, y = 33, label = dev)
 )
-gg +  guides(fill = guide_legend(title = "N sites")) +
 
 ggsave(filename = 'figure_5.png', 
        plot = gg, 
        device = 'png',
-       path = 'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
-       width = 4, height = 4, dpi = 500)
+       path = 'figures/',
+       width = 5, height = 4, dpi = 500)

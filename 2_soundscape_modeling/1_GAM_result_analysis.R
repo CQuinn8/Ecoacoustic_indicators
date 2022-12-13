@@ -8,14 +8,14 @@ library(kableExtra)
 library(corrplot)
 source('utility_fxs.R')
 
-wd <- '/results/'
-out_dir <- '/figures/'
+# output for figures
+out_dir <- 'figures/'
 
 # Site average acoustic indices
-indices_df <- fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices.csv'))
+indices_df <- fread('data/site_avg_acoustic_indices.csv')
 
 # Site Avg ABGQI data
-abgqi_df <- fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+abgqi_df <- fread('data//site_avg_ABGQI.csv') %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
@@ -41,8 +41,8 @@ mod_df <- mod_df %>%
          Interference  = min_max_norm(Interference))
 
 # Read in model objects
-model_objects <- readRDS(file = '/models/gam_model_objects.RData')
-model_slopes <- readRDS(file = '/models/gam_model_slopes.RData')
+model_objects <- readRDS(file = 'models/gam_model_objects-20221205.RData')
+model_slopes <- readRDS(file = "models/gam_model_slopes-20221205.RData")
 
 ######################################
 # CONCURVITY
@@ -197,7 +197,7 @@ slope_df_filtered %>%
             axis.text.x = element_text(angle = 45, hjust = 1)))
 
 # Save figure 2
-ggsave(gg, filename = paste0(out_dir,'figure_2.png'), 
+ggsave(gg, filename = 'figures/figure_2.png', 
        height = 6, width = 6.5, unit = 'in', dpi = 500)
 
 ######################################
@@ -241,10 +241,10 @@ R1 %>%
 
 
 ######################################
-# Parital Dependence Plots (Supplementary Material)
+# Partital Dependence Plots (Supplementary Material)
 # Each acoustic index PDP summary is drawn and then saved using the write_pdp() in utility_fxs.R
 #  - Some indices have summary notes included
-#  - Oganized in descending deviance
+#  - Organized in descending deviance
 
 # combine dataframes
 temp_df = merge(x = indices_df, y = mod_df)

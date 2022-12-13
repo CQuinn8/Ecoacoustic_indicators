@@ -99,7 +99,7 @@ index_names <- list(
   'NDSI' = "NDSI",
   'NDSI_A' = "NDSI-\u03B1",
   'NDSI_B' = "NDSI-\u03B2",
-  'R' = "R",
+  'R' = "RN",
   'rugo' = "Rugosity",
   'sfm' = "SFM",
   'zcr_mean' = "ZCR"

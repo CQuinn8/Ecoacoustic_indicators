@@ -19,8 +19,8 @@ fonts()
 source('utility_fxs.R')
 
 ##########################################
-# Read in by-min abgqi data and remove recordings with interference (Brute Force)
-results_dir <- '/paper-AcousticIndices/results/ABGQI_inference/'
+# Read in by-min abgqi data and remove recordings with interference
+results_dir <- 'zenodo/ABGQI_inference_by_site/'
 
 # SITES WITH ANOMALOUS BEHAVIOR 
 error_sites <- c('s2lam012_190506.csv','s2lam012_190529.csv','s2lam012_190605.csv',
@@ -42,8 +42,9 @@ mean_fx <- list(
 )
 
 # save output csv of avg values without interference
-out_file <- paste0(results_dir, "/averages/site_avg_ABGQI_sans_interference.csv")
+out_file <- "data/site_avg_ABGQI_sans_interference.csv"
 if(file.exists(out_file)){
+  print("File already created")
   abgqi_df <- read.csv(out_file)
 } else {
   # instantiate empty lists
@@ -57,7 +58,7 @@ if(file.exists(out_file)){
     print(paste0(i," : ", temp_site_name))
     
     #read in csv
-    df <- read.csv(paste0(results_dir,"by_site/",temp_site))
+    df <- read.csv(paste0(results_dir, temp_site))
     
     # number of recordings
     n_wavs <- length(unique(df$wav))
@@ -91,23 +92,24 @@ if(file.exists(out_file)){
   
   # save csv
   write.csv(all_site_avg_df, file = out_file, row.names = FALSE)
-  write.csv(wavs_sans_int, file = paste0(results_dir, "/averages/wavs_sans_interference.csv"), row.names = FALSE)
+  write.csv(wavs_sans_int, file = paste0(results_dir, "wavs_sans_interference.csv"), row.names = FALSE)
 }
 rm(results_dir)
 
 ###########################################
 ####### filter acoustic indices  ##########
 # This section uses the above dataframe where Interference containing recordings have been rm
-results_dir <- '/paper-AcousticIndices/results/acoustic_indices_aggregation/'
+results_dir <- 'zenodo/acoustic_indices_by_site/'
 
 # 1-min site acoustic indices
-site_csvs <- list.files(paste0(results_dir, "by_site"), full.names = F, pattern = "*.csv")
+site_csvs <- list.files(results_dir, full.names = F, pattern = "*.csv")
 
 # Remove any of the above error sites
 site_csvs <- site_csvs[!site_csvs %in% error_sites]
 
-out_file <- paste0(results_dir, "/averages/site_avg_acoustic_indices_sans_interference.csv")
+out_file <- "data/site_avg_acoustic_indices_sans_interference.csv"
 if(file.exists(out_file)){
+  print("File already created")
   indices_df <- read.csv(out_file)
 } else {
   site_avg_list <- list()
@@ -119,7 +121,7 @@ if(file.exists(out_file)){
     print(paste0(i," : ", temp_site_name))
     
     #read in csv
-    df <- read.csv(paste0(results_dir,"by_site/",temp_site)) 
+    df <- read.csv(paste0(results_dir,temp_site)) 
   
     # filter based on wavs with no interference
     temp_wav_vec <- wav_list[[temp_site_name]]
@@ -147,10 +149,8 @@ if(file.exists(out_file)){
 ###########################################
 ####### read in data and data prep ########
 # Code from here on is similar to 0_by_site_GAM.R
-wd <- '/paper-AcousticIndices/results/'
-
 # read in abgqi data
-abgqi_df <- fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI_sans_interference.csv')) %>%
+abgqi_df <- fread('data/site_avg_ABGQI_sans_interference.csv') %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(site, wavs, wavs_sans_int, contains('mean'), ARU, -Interference_mean) %>%
@@ -162,12 +162,12 @@ abgqi_df_no_error <- abgqi_df %>%
   filter(wavs >= (144 * 2.5)) # 44 sites
 
 # sites with static
-error_sites <- read.csv('/paper-AcousticIndices/data/identified_problem_sites_witherrors.csv')
+error_sites <- read.csv('data/identified_problem_sites_witherrors.csv')
 error_sites <- paste0(error_sites$SiteID, collapse = '|')
 abgqi_df_no_error <- abgqi_df_no_error[!grepl(error_sites, abgqi_df_no_error$site),] # 7 sites dropped after filter above
 
 # Read in the updated, interference filtered acoustic index csv
-indices_df <- fread(paste0(wd, 'acoustic_indices_aggregation/averages/site_avg_acoustic_indices_sans_interference.csv'))
+indices_df <- fread('data/site_avg_acoustic_indices_sans_interference.csv')
 
 # scale covariates ABGQ
 mod_df <- abgqi_df_no_error %>%
@@ -179,13 +179,19 @@ mod_df <- abgqi_df_no_error %>%
 
 # count of recordings without interference (n = 300,157)
 sum(mod_df$wavs_sans_int)
+mean(mod_df$wavs_sans_int)
+sd(mod_df$wavs_sans_int)
+
+# ACI filtering removes
+mod_df %>%
+  distinct() %>%
+  count()
 
 # Summarize, non-interference ABGQ
 mod_df %>%
   select(Anthropophony, Biophony, Geophony, Quiet) %>%
   dplyr::summarise(across(where(is.numeric), mean_sd)) %>%
   round(6)
-
 
 ###########################################
 ######## ACI - sans Interference ##########
@@ -353,7 +359,7 @@ ggsave(filename = 'figure_4.png',
 ###########################################
 # Compare with and without Interference ACI
 # Read in ACI GAM object with Interference included
-aci_with_int <- readRDS(file = '/models/gam_model_objects.RData')$ACI
+aci_with_int <- readRDS(file = 'models/gam_model_objects-20221205.RData')$ACI
 draw(aci_with_int, scales = "fixed")
 summary(aci_with_int)
 
@@ -381,8 +387,8 @@ slope_df_filtered <- model_slopes %>%
 
 
 # PROCESS: Interference model and data
-model_slopes_int <- readRDS(file = paste0(wd, '/models/gam_model_slopes.RData'))$ACI
-abgqi_df_int <- fread(paste0(wd, 'ABGQI_inference/averages/site_avg_ABGQI.csv')) %>%
+model_slopes_int <- readRDS(file = 'models/gam_model_slopes-20221205.RData')$ACI
+abgqi_df_int <- fread('data/site_avg_ABGQI.csv') %>%
   mutate(ARU = substr(site, 4,5),
          ARUdevice = substr(site, 4,8)) %>%
   select(-contains('var')) %>%
@@ -441,5 +447,5 @@ temp_max <- ceiling(max(slope_df_filtered_combined$upper))
 ggsave(filename = 'figure_3.png', 
        plot = gg, 
        device = 'png',
-       path =  'G:/My Drive/NAU/Dissertation/paper2-AcousticIndices/figures/',
+       path =  'figures/',
        width = 7, height = 4, dpi = 500)

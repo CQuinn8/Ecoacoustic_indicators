@@ -1,11 +1,8 @@
 # Purpose : Use site csvs of all acoustic index calculations to generate by-in, by-hour, and by-site data
-
-ll = '/projects/tropics/users/cquinn/R_400/'
-.libPaths(c( .libPaths(), ll))
 library(data.table)
 library(dplyr)
 
-results_dir = '/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices_aggregation/'
+results_dir = '/results/acoustic_indices_aggregation/' # where the by site acoustic index csvs live
 
 # SITES WITH ANOMALOUS BEHAVIOR 
 error_sites = c('s2lam012_190506.csv','s2lam012_190529.csv','s2lam012_190605.csv',
@@ -128,6 +125,8 @@ all_site_dawn_chorus_df = do.call("rbind", dawn_chorus_list)
 
 # save csv
 write.csv(all_site_avg_df, file = paste0(results_dir, "/averages/site_avg_acoustic_indices.csv"), row.names = FALSE)
-write.csv(all_site_by_hour_df, file = paste0(results_dir, "/averages/site_by_hour_acoustic_indices.csv"), row.names = FALSE)
-write.csv(all_site_by_hour_all_df, file = paste0(results_dir, "/averages/site_by_hour_all_acoustic_indices.csv"), row.names = FALSE)
+# write.csv(all_site_by_hour_df, file = paste0(results_dir, "/averages/site_by_hour_acoustic_indices.csv"), row.names = FALSE)
+# write.csv(all_site_by_hour_all_df, file = paste0(results_dir, "/averages/site_by_hour_all_acoustic_indices.csv"), row.names = FALSE)
 write.csv(all_site_dawn_chorus_df, file = paste0(results_dir, "/averages/site_acoustic_indices_dawn_4am-12pm.csv"), row.names = FALSE)
+
+
