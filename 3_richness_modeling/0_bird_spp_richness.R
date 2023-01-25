@@ -17,7 +17,7 @@ source('utility_fxs.R')
 wd = 'zenodo/'
 
 # bird species pres/abs by site 
-bird_df = fread('data/sonoma_s2l_predictions_ROImaxF05_220905_summarized.csv')
+bird_df = fread('data/sonoma_s2l_predictions_SoundscapeMaxF05_230118_summarized.csv')
 
 # reduce sites used in ABGQI analyses
 sites = fread("data/sites_used_in_GAMs.csv")
@@ -73,7 +73,6 @@ indices_df = indices_df[indices_df$site %in% sites$sites, ]
 mod_df = abgqi_df_no_error %>%
   left_join(y = site_spp_rich, by = 'site') %>%
   drop_na()
-  #replace_na(list(site_richness = 0))
 
 mean(mod_df$site_richness)
 sd(mod_df$site_richness)
@@ -95,11 +94,14 @@ bird_df_nwavs <- abgqi_df_no_error %>%
   left_join(bird_df, by = 'site') %>%
   drop_na()
 
+# what is the proportion of files with a presence
 rate_birds <- bird_df_nwavs %>%
   mutate_at(vars(-site,-wavs), funs(. / wavs)) %>%
   summarise(across(where(is.numeric), mean))
 
-# write.csv(rate_birds, row.names = F, paste0(wd,'results/modeling/bird_rate_24hr.csv'))
+mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
+mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
+mod_df$logBiophony = log(mod_df$Biophony+1e-7)
 
 #############################################
 # 24hr: BIOPHONY ~ SPP RICH 
@@ -109,15 +111,11 @@ mod_df %>%
   ggplot(aes(y = Biophony, x = site_richness, colour = ARU)) +
   geom_point(alpha = 0.3) +
   geom_smooth(method = "gam")
-mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
-mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
-mod_df$logBiophony = log(mod_df$Biophony+1e-7)
 
 hist(mod_df$Biophony)
 hist(mod_df$sqrtBiophony)
 hist(mod_df$cuberootBiophony)
 hist(mod_df$logBiophony)
-# mod_df = mod_df[-886,]
 
 modBio1 = gam(cuberootBiophony ~ 
                 ARU +
@@ -155,6 +153,44 @@ mod_df$Biophony_pred = predict(modBio1, newdata = mod_df, type = "response")^3
     theme(legend.position = "top"))
 
 #############################################
+# 24hr: SPP RICH ~ Biophony
+mod_df_bio = mod_df %>%
+  mutate(ARU = factor(ARU),
+         logwavs = log(wavs)) %>%
+  select(Biophony, site_richness, logwavs, ARU) %>%
+  mutate(Biophony = min_max_norm(Biophony))
+
+mod1 = gam(site_richness ~ 
+             logwavs +
+             ARU +
+             s(Biophony, k = 5),
+           data = mod_df_bio,
+           family = poisson(),
+           method = 'ML')
+summary(mod1)
+gam.check(mod1)
+
+# test ARU drop
+mod2 = gam(site_richness ~ 
+             logwavs +
+             s(Biophony, k = 5),
+           data = mod_df_bio,
+           family = poisson(),
+           method = 'ML')
+summary(mod2)
+lrtest(mod1, mod2) # p = 0.05559 so recommended to drop ARU
+draw(mod2)
+gam.check(mod2)
+
+# RMSE
+sqrt(mean((mod_df_bio$site_richness - mod2$fitted.values)^2))
+sqrt(mean((mod_df_bio$site_richness - mod2$fitted.values)^2))/ 
+  diff(range(mod_df_bio$site_richness))
+
+mod_df$spp_rich_pred = predict(mod1, newdata = mod_df_bio, type = "response")
+pred_plot(mod_df, mod1, "site_richness")
+
+#############################################
 # 24hr: SPP RICH ~ ACOUSTIC INDICES
 mod_df_indices = indices_df %>%
   left_join(y = site_spp_rich, by = 'site') %>%
@@ -166,7 +202,6 @@ mod_df_indices = merge(mod_df_indices, abgqi_df_no_error, by = 'site') %>%
   select(-YYYY, -site, -wavs, -Anthropophony, -Biophony, -Geophony, -Quiet, -Interference)
 
 hist(mod_df_indices$site_richness)
-hist(mod_df_indices$logRichness)
 
 mod_df_indices %>%
   select(-logwavs, -logRichness) %>%
@@ -176,10 +211,6 @@ mod_df_indices %>%
   geom_smooth(method = "gam") +
   facet_wrap(~index, scales = "free")
 
-# extreme low outlier spp richness = 1
-mod_df_indices = mod_df_indices %>%
-  filter(site_richness > 0)
-
 mod1 = gam(site_richness ~ 
              logwavs +
              ARU +
@@ -187,204 +218,79 @@ mod1 = gam(site_richness ~
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5)+ 
-             s(rugo, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
+             s(rugo, k = 5) + 
              s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod1)
 par(mfrow = c(2,2))
-gam.check(mod1, type = 'response') # Family is okay based on assumptions but upper tail of QQ is too low
+gam.check(mod1, type = 'response') # Family is okay based on assumptions but upper tail of QQ is low
 
-# drop ARU
+# drop rugo
 mod2 = gam(site_richness ~ 
              logwavs +
+             ARU +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(rugo, k = 5)+ 
-             s(sfm, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
              s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod2)
-lrtest(mod1, mod2) # ARU not recommended to drop
-
-# drop rugo/add ARU
-mod3 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) + 
-             s(sfm, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-summary(mod3)
-lrtest(mod2, mod3)
-
-# Test ARU again
-mod4 = gam(site_richness ~ 
-             logwavs +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) + 
-             s(sfm, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-lrtest(mod3, mod4) # keep ARU
-
-# drop ADI
-mod5 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(ACI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) + 
-             s(sfm, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-summary(mod5)
-lrtest(mod3, mod5)
-
-# test ARU
-mod6 = gam(site_richness ~ 
-             logwavs +
-             s(ACI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) + 
-             s(sfm, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-lrtest(mod5, mod6) # drop
-summary(mod6)
-
-# drop H 
-mod7 = gam(site_richness ~ 
-             logwavs +
-             s(ACI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) +
-             s(sfm, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-summary(mod7)
-lrtest(mod6, mod7)
-
-# drop zcr
-mod8 = gam(site_richness ~ 
-             logwavs +
-             s(ACI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) +
-             s(NDSI_A, k = 5) +
-             s(NDSI_B, k = 5) +
-             s(BI, k = 5) + 
-             s(Hs, k = 5) + 
-             s(Ht, k = 5) + 
-             s(M, k = 5) + 
-             s(R, k = 5) +
-             s(sfm, k = 5),
-           data = mod_df_indices,
-           family = poisson(),
-           method = 'ML')
-summary(mod8)
-lrtest(mod7, mod8) # keep zcr - mod7 is final
+lrtest(mod1, mod2) # recommended to drop rugo
 
 # final model
-summary(mod7)
+summary(mod2)
 par(mfrow = c(2,2))
-gam.check(mod7, type = 'response')
-draw(mod7, scales = 'fixed', residuals = TRUE)
-pred_plot(data_df = mod_df_indices, model_fit = mod7, index_name = 'site_richness')
+gam.check(mod2, type = 'response')
+draw(mod2, scales = 'fixed', residuals = TRUE)
+pred_plot(data_df = mod_df_indices, model_fit = mod2, index_name = 'site_richness')
 
 # check concurvity - NDSI, NDSI_A, NDSI_B
+# ADI: AEI, Hs, H
+# AEI: ADI, H
+# NDSI: NDSI B, NDSI A
+# NDSI A: NDSI, NDSI A
+# NDSI B: NDSI, NDSI A
+# H: Hs, ADI, AEI
+# Hs: H, ADI
+concurvity(mod2, full = TRUE)
+c <- concurvity(mod2, full = FALSE)$worst 
+
+# OLD #
 # NDSI only: sign changes from negative to positive
 # NDSI_B only: remains relatively stable
 # NDSI_A only: remains relatively stable
-concurvity(mod7, full = TRUE)
-c <- concurvity(mod7, full = FALSE)$worst 
+
 
 # RMSE
-sqrt(mean((mod_df_indices$site_richness - mod7$fitted.values)^2))
-sqrt(mean((mod_df_indices$site_richness - mod7$fitted.values)^2))/ 
+sqrt(mean((mod_df_indices$site_richness - mod2$fitted.values)^2))
+sqrt(mean((mod_df_indices$site_richness - mod2$fitted.values)^2))/ 
   diff(range(mod_df_indices$site_richness))
 
-# parametric wavs effect
-exp(0.2988)
-
 # summarized slopes
-ci = slope_summary(mod7)
+ci = slope_summary(mod2)
 model_slopes = cbind(index = rep('Bird Spp. Richness', times = nrow(ci)), ci)
 
 # Visualize slope objects 
@@ -411,40 +317,10 @@ temp_max = ceiling(max(slope_df_filtered$upper))
       coord_flip() +
       theme_bw())
 
-(gg <- draw(mod6, 
+(gg <- draw(mod2, 
             scales = "fixed", 
             ncol = 4) &
     theme_bw())
-
-
-#############################################
-# 24hr: SPP RICH ~ Biophony
-mod_df_bio = mod_df %>%
-  mutate(ARU = factor(ARU),
-         logwavs = log(wavs)) %>%
-  select(Biophony, site_richness, logwavs, ARU) %>%
-  mutate(Biophony = min_max_norm(Biophony))
-
-mod1 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5),
-           data = mod_df_bio,
-           family = poisson(),
-           method = 'ML')
-
-summary(mod1)
-gam.check(mod1)
-draw(mod1)
-
-# RMSE
-sqrt(mean((mod_df_bio$site_richness - mod1$fitted.values)^2))
-
-sqrt(mean((mod_df_bio$site_richness - mod1$fitted.values)^2))/ 
-  diff(range(mod_df_bio$site_richness))
-
-mod_df$spp_rich_pred = predict(mod1, newdata = mod_df_bio, type = "response")
-pred_plot(mod_df, mod1, "site_richness")
 
 #############################################
 # 24hr: SPP RICH ~ Biophony + Indices
@@ -469,16 +345,16 @@ mod1 = gam(site_richness ~
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5)+ 
-             s(rugo, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
+             s(rugo, k = 5) + 
              s(zcr_mean, k = 5),
            data = bio_index_df,
            family = poisson(),
@@ -487,230 +363,140 @@ summary(mod1)
 par(mfrow = c(2,2))
 gam.check(mod1, type = 'response')
 
-# drop rugo
+# drop ARU 
 mod2 = gam(site_richness ~ 
              logwavs +
-             ARU +
              s(Biophony, k = 5) +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(sfm, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(Ht, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
+             s(rugo, k = 5) + 
              s(zcr_mean, k = 5),
            data = bio_index_df,
            family = poisson(),
            method = 'ML')
+lrtest(mod1,mod2)
 summary(mod2)
-gam.check(mod2, type = 'response')
-lrtest(mod1, mod2)
-
-# drop sfm 
-mod3 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod3)
-gam.check(mod3, type = 'response')
-lrtest(mod2, mod3)
-
-# drop ht 
-mod4 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Hs, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod4)
-gam.check(mod4, type = 'response')
-lrtest(mod3, mod4) # not suggested to drop Ht
-summary(mod3)
-
-# add Ht, drop hs
-mod5 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Ht, k = 5)+
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod5)
-gam.check(mod5, type = 'response')
-lrtest(mod3, mod5) # Hs recommended to drop
 
 # drop Ht 
+mod3 = gam(site_richness ~ 
+             logwavs +
+             s(Biophony, k = 5) +
+             s(ACI, k = 5) + 
+             s(ADI, k = 5) + 
+             s(AEI, k = 5) + 
+             s(NDSI, k = 5) + 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(sfm, k = 5) + 
+             s(rugo, k = 5) + 
+             s(zcr_mean, k = 5),
+           data = bio_index_df,
+           family = poisson(),
+           method = 'ML')
+lrtest(mod2,mod3)
+summary(mod3)
+
+# drop sfm
+mod4 = gam(site_richness ~ 
+             logwavs +
+             s(Biophony, k = 5) +
+             s(ACI, k = 5) + 
+             s(ADI, k = 5) + 
+             s(AEI, k = 5) + 
+             s(NDSI, k = 5) + 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(Hs, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(rugo, k = 5) + 
+             s(zcr_mean, k = 5),
+           data = bio_index_df,
+           family = poisson(),
+           method = 'ML')
+lrtest(mod3,mod4)
+summary(mod4)
+
+# drop Hs
+mod5 = gam(site_richness ~ 
+             logwavs +
+             s(Biophony, k = 5) +
+             s(ACI, k = 5) + 
+             s(ADI, k = 5) + 
+             s(AEI, k = 5) + 
+             s(NDSI, k = 5) + 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
+             s(rugo, k = 5) + 
+             s(zcr_mean, k = 5),
+           data = bio_index_df,
+           family = poisson(),
+           method = 'ML')
+lrtest(mod4,mod5)
+summary(mod5)
+
+# drop rugo
 mod6 = gam(site_richness ~ 
              logwavs +
-             ARU +
              s(Biophony, k = 5) +
              s(ACI, k = 5) + 
              s(ADI, k = 5) + 
              s(AEI, k = 5) + 
              s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
+             s(NDSI_A, k = 5) + 
+             s(NDSI_B, k = 5) + 
+             s(BI, k = 5) + 
+             s(H, k = 5) + 
+             s(M, k = 5) + 
+             s(R, k = 5) + 
              s(zcr_mean, k = 5),
            data = bio_index_df,
            family = poisson(),
            method = 'ML')
+lrtest(mod5,mod6)
 summary(mod6)
-lrtest(mod5, mod6) # keep Ht
-summary(mod5)
+gam.check(mod6, type = "response")
 
-# test ARU 
-mod7 = gam(site_richness ~ 
-             logwavs +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5)+ 
-             s(NDSI_B, k = 5)+ 
-             s(BI, k = 5)+ 
-             s(H, k = 5)+ 
-             s(Ht, k = 5)+ 
-             s(M, k = 5)+ 
-             s(R, k = 5)+ 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod7)
-lrtest(mod5, mod7) # keep ARU
-summary(mod5)
-
-# test R 
-mod8 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(Ht, k = 5) +
-             s(M, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod8)
-lrtest(mod5, mod8)
-
-# drop Ht
-mod9 = gam(site_richness ~ 
-             logwavs +
-             ARU +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(M, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod9)
-lrtest(mod8, mod9)
-
-# drop ARU
-mod10 = gam(site_richness ~ 
-             logwavs +
-             s(Biophony, k = 5) +
-             s(ACI, k = 5) + 
-             s(ADI, k = 5) + 
-             s(AEI, k = 5) + 
-             s(NDSI, k = 5) + 
-             s(NDSI_A, k = 5) + 
-             s(NDSI_B, k = 5) + 
-             s(BI, k = 5) + 
-             s(H, k = 5) + 
-             s(M, k = 5) + 
-             s(zcr_mean, k = 5),
-           data = bio_index_df,
-           family = poisson(),
-           method = 'ML')
-summary(mod10)
-lrtest(mod9, mod10) # suggest to retain ARU
-summary(mod9) # final model
-
-# Final model - mod9
-summary(mod9)
-draw(mod9, scales = 'fixed', residuals = TRUE)
-pred_plot(data_df = bio_index_df, model_fit = mod5, index_name = 'site_richness')
+# Final model - mod6
+summary(mod6)
+draw(mod6, scales = 'fixed', residuals = TRUE)
+pred_plot(data_df = bio_index_df, model_fit = mod6, index_name = 'site_richness')
 
 # check concurvity
-# AEI, H, and ADI; NDSI, NDSI_A, NDSI_B: ZCR and H
-concurvity(mod9, full = TRUE)
-c <- concurvity(mod9, full = FALSE)$worst
+# ADI: AEI and H
+# AEI: ADI and H
+# NDSI: NDSI A and NDSI B
+# NDSI A: NDSI and NDSI B
+# NDSI B: NDSI and NDSI A
+# H: ADI and AEI
+c <- concurvity(mod6, full = FALSE)$worst
 
 # RMSE
-sqrt(mean((bio_index_df$site_richness - mod9$fitted.values)^2))
+sqrt(mean((bio_index_df$site_richness - mod6$fitted.values)^2))
 
-sqrt(mean((bio_index_df$site_richness - mod9$fitted.values)^2))/ 
+sqrt(mean((bio_index_df$site_richness - mod6$fitted.values)^2))/ 
   diff(range(bio_index_df$site_richness))
 
 # summarized slopes
