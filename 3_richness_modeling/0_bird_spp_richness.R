@@ -104,7 +104,7 @@ mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
 mod_df$logBiophony = log(mod_df$Biophony+1e-7)
 
 #############################################
-# 24hr: BIOPHONY ~ SPP RICH 
+# Eq2 24hr: BIOPHONY ~ SPP RICH 
 # visualize data
 mod_df %>%
   select(Biophony, site_richness, ARU) %>%
@@ -153,7 +153,7 @@ mod_df$Biophony_pred = predict(modBio1, newdata = mod_df, type = "response")^3
     theme(legend.position = "top"))
 
 #############################################
-# 24hr: SPP RICH ~ Biophony
+# Eq3 24hr: SPP RICH ~ Biophony
 mod_df_bio = mod_df %>%
   mutate(ARU = factor(ARU),
          logwavs = log(wavs)) %>%
@@ -181,6 +181,7 @@ summary(mod2)
 lrtest(mod1, mod2) # p = 0.05559 so recommended to drop ARU
 draw(mod2)
 gam.check(mod2)
+concurvity(mod2)
 
 # RMSE
 sqrt(mean((mod_df_bio$site_richness - mod2$fitted.values)^2))
@@ -191,7 +192,7 @@ mod_df$spp_rich_pred = predict(mod1, newdata = mod_df_bio, type = "response")
 pred_plot(mod_df, mod1, "site_richness")
 
 #############################################
-# 24hr: SPP RICH ~ ACOUSTIC INDICES
+# Eq4 24hr: SPP RICH ~ ACOUSTIC INDICES
 mod_df_indices = indices_df %>%
   left_join(y = site_spp_rich, by = 'site') %>%
   drop_na()
@@ -206,7 +207,7 @@ hist(mod_df_indices$site_richness)
 mod_df_indices %>%
   select(-logwavs, -logRichness) %>%
   gather(index, value, -ARU, -site_richness) %>%
-  ggplot(aes(x = value, y = site_richness, colour = ARU)) +
+  ggplot(aes(x = value, y = site_richness)) +
   geom_point(alpha = 0.1) +
   geom_smooth(method = "gam") +
   facet_wrap(~index, scales = "free")
@@ -236,7 +237,7 @@ summary(mod1)
 par(mfrow = c(2,2))
 gam.check(mod1, type = 'response') # Family is okay based on assumptions but upper tail of QQ is low
 
-# drop rugo
+# drop Hs
 mod2 = gam(site_richness ~ 
              logwavs +
              ARU +
@@ -248,17 +249,17 @@ mod2 = gam(site_richness ~
              s(NDSI_B, k = 5) + 
              s(BI, k = 5) + 
              s(H, k = 5) + 
-             s(Hs, k = 5) + 
              s(Ht, k = 5) + 
              s(M, k = 5) + 
              s(R, k = 5) + 
+             s(rugo, k = 5) + 
              s(sfm, k = 5) + 
              s(zcr_mean, k = 5),
            data = mod_df_indices,
            family = poisson(),
            method = 'ML')
 summary(mod2)
-lrtest(mod1, mod2) # recommended to drop rugo
+lrtest(mod1, mod2) # recommended to drop Hs
 
 # final model
 summary(mod2)
@@ -267,22 +268,14 @@ gam.check(mod2, type = 'response')
 draw(mod2, scales = 'fixed', residuals = TRUE)
 pred_plot(data_df = mod_df_indices, model_fit = mod2, index_name = 'site_richness')
 
-# check concurvity - NDSI, NDSI_A, NDSI_B
-# ADI: AEI, Hs, H
+# check concurvity
+# ADI: AEI, H
 # AEI: ADI, H
 # NDSI: NDSI B, NDSI A
 # NDSI A: NDSI, NDSI A
 # NDSI B: NDSI, NDSI A
-# H: Hs, ADI, AEI
-# Hs: H, ADI
-concurvity(mod2, full = TRUE)
+# H: ADI, AEI
 c <- concurvity(mod2, full = FALSE)$worst 
-
-# OLD #
-# NDSI only: sign changes from negative to positive
-# NDSI_B only: remains relatively stable
-# NDSI_A only: remains relatively stable
-
 
 # RMSE
 sqrt(mean((mod_df_indices$site_richness - mod2$fitted.values)^2))
@@ -500,7 +493,7 @@ sqrt(mean((bio_index_df$site_richness - mod6$fitted.values)^2))/
   diff(range(bio_index_df$site_richness))
 
 # summarized slopes
-ci = slope_summary(mod9)
+ci = slope_summary(mod6)
 model_slopes = cbind(index = rep('Bird Spp. Richness', times = nrow(ci)), ci)
 
 # Visualize slope objects 
@@ -527,15 +520,7 @@ temp_max = ceiling(max(slope_df_filtered$upper))
     coord_flip() +
     theme_bw())
 
-(gg <- draw(mod9, 
+(gg <- draw(mod6, 
             scales = "fixed", 
             ncol = 3) &
     theme_bw())
-
-# Investigate why at low richness we overpredict compared to higher (possibly due to gradient in disturbance)
-mod_df %>%
-  select(Anthropophony, Quiet, site_richness) %>%
-  pivot_longer(names_to = "sound", values_to = "value", !site_richness) %>%
-  ggplot(aes(x = value, y = site_richness)) +
-    geom_hex() +
-    facet_wrap(. ~ sound)

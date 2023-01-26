@@ -78,7 +78,7 @@ mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
 mod_df$logBiophony = log(mod_df$Biophony+1e-7)
 
 #############################################
-# Dawn: BIOPHONY ~ SPP RICH 
+# Eq 2 Dawn: BIOPHONY ~ SPP RICH 
 # visualize data
 mod_df %>%
   select(Biophony, site_richness, ARU) %>%
@@ -101,6 +101,7 @@ modBio1 = gam(cuberootBiophony ~
 summary(modBio1)
 par(mfrow = c(2,2))
 gam.check(modBio1) # some tail behavior in QQ and a right skewed histogram - check on this value
+concurvity(modBio1)
 
 # RMSE
 sqrt(mean((mod_df$Biophony - modBio1$fitted.values^3)^2))
@@ -128,7 +129,7 @@ mod_df$Biophony_pred = predict(modBio1, newdata = mod_df, type = "response")^3
 
 
 #############################################
-# Dawn: SPP RICH ~ Biophony
+# Eq 3 Dawn: SPP RICH ~ Biophony
 mod_df_bio = mod_df %>%
   select(Biophony, site_richness, logwavs, ARU) %>%
   mutate(Biophony = min_max_norm(Biophony))
@@ -144,6 +145,7 @@ mod1 = gam(site_richness ~
 summary(mod1)
 gam.check(mod1)
 draw(mod1)
+concurvity(mod1)
 
 # RMSE
 sqrt(mean((mod_df_bio$site_richness - mod1$fitted.values)^2))
@@ -158,7 +160,7 @@ pred_plot(mod_df_bio, mod1, "site_richness")
 
 
 #############################################
-# Dawn: SPP RICH ~ ACOUSTIC INDICES
+# Eq 4 Dawn: SPP RICH ~ ACOUSTIC INDICES
 mod_df_indices = indices_df %>%
   left_join(y = site_spp_rich, by = 'site') %>%
   drop_na() %>%
@@ -347,7 +349,7 @@ temp_max = ceiling(max(slope_df_filtered$upper))
       coord_flip() +
       theme_bw())
 
-(gg <- draw(mod1, 
+(gg <- draw(mod4, 
             scales = "fixed", 
             ncol = 4) &
     theme_bw())
@@ -733,6 +735,7 @@ bio_index_df$y_pred = predict(mod13, newdata = bio_index_df, type = "response")
     xlab("Observed Richness") +
     theme_bw() +
     scale_fill_viridis_c() +
+    index_labeller() +
     theme(text = element_text(size = 16, family = 'Calibri')) +
     annotate("text", x = 10, y = 45, label = dev)
 )
