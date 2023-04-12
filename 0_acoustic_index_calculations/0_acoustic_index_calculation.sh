@@ -4,37 +4,36 @@
 # ----- ABOUT -----
 # By Colin Quinn, NAU
 # cq73@gmail.com
-# Created: 2/28/2019
-# Last updated: 30-Nov-2021
+# Created: 28-Feb-2019
+# Last updated: 30-Nov-2022
 #
 # Purpose: 
 # Calculates acoustic indices (n=15+) for directories of wav files using slurm tasks for n_files
 # 
 # NOTE: 
 #	1) run ls | wc -l in data dir to get total files
-#
 
 
 # ENTER SETUP SCRIPT
 # - SLURM -
 #SBATCH --time=00:02:00
-#SBATCH --output='/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/calculations.out'
+#SBATCH --output='/0_acoustic_index_calculations/calculations.out'
 
 echo "Entering first slurm script"
 # --- SLURM Settings ---
 arrayLim=2000 		# how many array jobs to have at once
-files_per_task=1 	# 50; how large each job should be, number of files
-timeReq="00:05:00"  # 18:00
+files_per_task=1	# 50; how large each job should be, number of files
+timeReq="00:10:00"  # 18:00
 memoryReq="5GB"
 
 # where output, first .sh script will be written to
-script_dir='/projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/'
+script_dir='/0_acoustic_index_calculations/'
 
 # --- DATA & RESULT DIR Settings ---
 #results_dir='/projects/tropics/users/cquinn/s2l/paper-AcousticIndices/results/acoustic_indices/'
-results_dir='/projects/tropics/users/cquinn/s2l/S2L_RA_work/acoustic_indices/wavs/'
-num_files=36
-toDo_csv="/projects/tropics/users/cquinn/s2l/S2L_RA_work/acoustic_indices/toDo_wavs.csv"
+results_dir=''
+num_files=7
+toDo_csv=""
 
 # --- Data preprocessing ---
 date_time=`date +%Y%m%d_%H%M%S`
@@ -86,7 +85,7 @@ module load R
 echo
 echo "---------Entering Rscript---------"
 # - R SCRIPT -
-Rscript /projects/tropics/users/cquinn/s2l/code/paper1-AcousticIndices/0_acoustic_index_calculations/0_acoustic_index_calculation.R \$SLURM_ARRAY_TASK_ID $files_per_task $results_dir $toDo_csv
+Rscript 0_acoustic_index_calculations/0_acoustic_index_calculation.R \$SLURM_ARRAY_TASK_ID $files_per_task $results_dir $toDo_csv
 
 # - ENDING -
 echo "Ended at:"

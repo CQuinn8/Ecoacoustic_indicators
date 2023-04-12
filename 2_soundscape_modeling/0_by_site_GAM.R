@@ -12,6 +12,7 @@ library(ggpubr)
 library(mgcv)
 library(gratia)
 library(lmtest)
+library(corrplot)
 
 # custom additional functions
 source('utility_fxs.R')
@@ -28,7 +29,7 @@ abgqi_df = fread('data/site_avg_ABGQI.csv') %>%
          Quiet = Quiet_mean, Interference = Interference_mean)
   
 # Site average acoustic index csv
-indices_df = fread(paste0(wd, 'data/site_avg_acoustic_indices.csv'))
+indices_df = fread('data/site_avg_acoustic_indices.csv')
 
 # Annual summary
 abgqi_df$YY = substr(abgqi_df$site, 10, 11)
@@ -85,6 +86,21 @@ final_models = list()
 #       - p-value according to chi-square (p < 0.05 : use the more complex model (H_a); p > 0.05 : we don't need the added complexity (H0))
 # - Final GAM fits are stored in a model list and saved as an RData object at the end of script
 # - Index GAMs are fit in alphabetical order below
+
+#############################################
+# ABGQI vs indices correlation
+cor_df <- mod_df %>%
+  left_join(y = indices_df, by = 'site') %>%
+  drop_na() %>% 
+  select(Anthropophony, Biophony, Geophony, Quiet, Interference,
+         ACI, ADI, AEI, NDSI, NDSI_A, NDSI_B, BI, H, Ht, Hs, M, R, sfm, rugo, zcr_mean)
+c <- cor(cor_df, method = "spearman")
+
+png("figures/index_soundscape_corr.png", res = 500, width = 8, height = 8, units = "in")
+corrplot(c, addCoef.col = 'black', 
+         tl.pos = 'ld', cl.pos = 'n', diag = FALSE,
+         col = COL2('PiYG'), type = "lower")
+dev.off()
 
 ###########################################
 ################# ACI #####################

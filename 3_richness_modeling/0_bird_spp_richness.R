@@ -9,7 +9,7 @@ library(ggpubr)
 library(mgcv)
 library(gratia)
 library(lmtest)
-
+library(corrplot)
 source('utility_fxs.R')
 
 ###################################
@@ -102,6 +102,21 @@ rate_birds <- bird_df_nwavs %>%
 mod_df$sqrtBiophony = sqrt(mod_df$Biophony)
 mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
 mod_df$logBiophony = log(mod_df$Biophony+1e-7)
+
+#############################################
+# 24 hr: Richness vs indices correlation
+cor_df <- mod_df %>%
+  left_join(y = indices_df, by = 'site') %>%
+  drop_na() %>% 
+  select(site_richness, Anthropophony, Biophony, Geophony, Quiet, Interference,
+         ACI, ADI, AEI, BI, H, Ht, Hs, M, NDSI, NDSI_A, NDSI_B, R, sfm, rugo, zcr_mean)
+c <- cor(cor_df, method = "spearman")
+
+png("figures/24_hr_corr.png", res = 500, width = 8, height = 8, units = "in")
+corrplot(c, addCoef.col = 'black', 
+         tl.pos = 'ld', cl.pos = 'n', diag = FALSE,
+         col = COL2('PiYG'), type = "lower")
+dev.off()
 
 #############################################
 # Eq2 24hr: BIOPHONY ~ SPP RICH 

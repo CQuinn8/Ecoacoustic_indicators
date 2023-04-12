@@ -78,6 +78,21 @@ mod_df$cuberootBiophony = (mod_df$Biophony)^(1/3)
 mod_df$logBiophony = log(mod_df$Biophony+1e-7)
 
 #############################################
+# Morning: Richness vs indices correlation
+cor_df <- mod_df %>%
+  left_join(y = indices_df, by = 'site') %>%
+  drop_na() %>% 
+  select(site_richness, Anthropophony, Biophony, Geophony, Quiet, Interference,
+         ACI, ADI, AEI, BI, H, Ht, Hs, M, NDSI, NDSI_A, NDSI_B, R, sfm, rugo, zcr_mean)
+c <- cor(cor_df, method = "spearman")
+
+png("figures/morning_corr.png", res = 500, width = 8, height = 8, units = "in")
+corrplot(c, addCoef.col = 'black', 
+         tl.pos = 'ld', cl.pos = 'n', diag = FALSE,
+         col = COL2('PiYG'), type = "lower")
+dev.off()
+
+#############################################
 # Eq 2 Dawn: BIOPHONY ~ SPP RICH 
 # visualize data
 mod_df %>%
@@ -120,7 +135,6 @@ mod_df$Biophony_pred = predict(modBio1, newdata = mod_df, type = "response")^3
     geom_point(aes(x = value, y = Biophony * 100, colour = ARU), alpha = 0.5) +
     geom_point(alpha = 0.1) +
     geom_smooth(method = 'gam', colour = 'black', alpha = 0.4) +
-    # ggtitle("Biophony: black = predicted values") +
     labs(y = 'Percent Biophony', x = 'Bird Species Richness') +
     scale_color_hue(labels = c("Audiomoth", "LG"), ) +
     theme_bw() +
@@ -153,7 +167,6 @@ sqrt(mean((mod_df_bio$site_richness - mod1$fitted.values)^2))
 # rRMSE 
 sqrt(mean((mod_df_bio$site_richness - mod1$fitted.values)^2)) / 
   diff(range(mod_df_bio$site_richness))
-
 
 mod_df_bio$spp_rich_pred = predict(mod1, newdata = mod_df_bio, type = "response")
 pred_plot(mod_df_bio, mod1, "site_richness")
@@ -273,7 +286,6 @@ mod4 = gam(site_richness ~
 lrtest(mod1, mod4) # simpler model
 summary(mod4)
 
-
 # drop sfm
 mod5 = gam(site_richness ~ 
              logwavs +
@@ -295,7 +307,6 @@ mod5 = gam(site_richness ~
            method = 'ML')
 lrtest(mod4, mod5) # sfm suggested to stay in
 summary(mod5)
-
 
 # final model
 summary(mod4)
@@ -353,6 +364,7 @@ temp_max = ceiling(max(slope_df_filtered$upper))
             scales = "fixed", 
             ncol = 4) &
     theme_bw())
+
 
 #############################################
 # Dawn: SPP RICH ~ Biophony + Indices
@@ -608,7 +620,7 @@ mod10 = gam(site_richness ~
 lrtest(mod8, mod10) # drop ACI
 summary(mod10)
 
-# drop ACI
+# drop Ht
 mod11 = gam(site_richness ~ 
               logwavs +
               s(Biophony, k = 5) +
@@ -745,8 +757,3 @@ ggsave(filename = 'figure_5.png',
        device = 'png',
        path = 'figures/',
        width = 5, height = 4, dpi = 500)
-
-# Look at potential model saturation
-# Compare predicted ~ observed vs log(predicted) ~ observed 
-summary(lm(y_pred ~ site_richness, bio_index_df))
-summary(lm(log(y_pred) ~ site_richness, bio_index_df))
