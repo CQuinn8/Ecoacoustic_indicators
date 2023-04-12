@@ -1,0 +1,26 @@
+
+Family: gaussian 
+Link function: identity 
+
+Formula:
+logR ~ ARU + s(Anthropophony, k = 5) + s(Biophony, k = 5) + s(Quiet, 
+    k = 5) + s(Interference, k = 5)
+
+Parametric coefficients:
+            Estimate Std. Error t value Pr(>|t|)    
+(Intercept) -0.61690    0.01946  -31.70   <2e-16 ***
+ARUlg       -0.59758    0.05234  -11.42   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Approximate significance of smooth terms:
+                   edf Ref.df      F  p-value    
+s(Anthropophony) 3.010  3.520  5.941 0.000231 ***
+s(Biophony)      1.000  1.001 48.178  < 2e-16 ***
+s(Quiet)         3.454  3.836 30.808  < 2e-16 ***
+s(Interference)  2.009  2.482  5.096 0.004146 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+R-sq.(adj) =  0.238   Deviance explained = 24.4%
+-ML = 1059.8  Scale est. = 0.34063   n = 1195
