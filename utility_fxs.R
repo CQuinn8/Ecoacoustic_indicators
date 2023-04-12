@@ -26,7 +26,7 @@ MAD_z = function(array){
   est = sapply(array, function(x) (x - med)/MAD)
 }
 
-# IDentify outlier values using the MAD approach and threshold score at 99 percentile
+# Identify outlier values using the MAD approach and threshold score at 99 percentile
 outlier_id = function(array){
   MAD_values = MAD_z(array)
   threshold = quantile(abs(MAD_values), probs = 0.99)
@@ -73,7 +73,7 @@ pred_plot = function(data_df,     # dataframe containing response and covs
       ggtitle(paste0(index_name, ": black = predicted values"))
 }
 
-# GAM first derivative calcualtion (i.e., partial effects slopes)
+# GAM first derivative calculation (i.e., partial effects slopes)
 slope_summary = function(model) {
   # covariates in model
   vars = data.frame(vars = names(model$sp)) %>%
@@ -86,7 +86,7 @@ slope_summary = function(model) {
   return(fd)
 }
 
-# Formated index names used for plotting
+# Formatted index names used for plotting
 index_names <- list(
   'ACI' = "ACI",
   'ADI' = "ADI",
